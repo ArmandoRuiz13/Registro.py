@@ -5,9 +5,9 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor de Ventas v23", layout="wide")
+st.set_page_config(page_title="Gestor Pro v24", layout="wide")
 
-st.title("🚀 Control de Ventas (Estructura Corregida)")
+st.title("🚀 Control de Ventas con ID Visual")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -23,6 +23,10 @@ def obtener_tc():
     except: return 18.50
 tc_actual = obtener_tc()
 
+# --- DATOS ACTUALES ---
+df_nube = lectura_segura()
+proximo_id = len(df_nube) # Calculamos el ID que sigue
+
 # --- RANGO SEMANAL ACTUAL ---
 hoy = datetime.now()
 inicio_semana = hoy - timedelta(days=hoy.weekday())
@@ -31,7 +35,7 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 
 # --- SIDEBAR: REGISTRO ---
 with st.sidebar:
-    st.header("📝 Nuevo Registro")
+    st.header(f"📝 Registro (ID Sugerido: {proximo_id})")
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
@@ -51,7 +55,7 @@ with st.sidebar:
     tc_mercado = limpiar_num(tc_mercado_txt)
     venta_mxn = limpiar_num(venta_mxn_txt)
 
-    # --- CALCULOS INTERNOS ---
+    # --- CALCULOS ---
     usd_tax = usd_bruto * 1.0825
     comi_mxn = (usd_tax * 0.12) * 19.5
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
@@ -60,21 +64,20 @@ with st.sidebar:
 
     btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
     if btn_calcular:
-        st.info(f"Comisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
+        st.info(f"ID a Generar: {proximo_id}\n\nComisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
     st.divider()
     st.header("🗑️ Borrar Registro")
-    df_nube = lectura_segura()
     if not df_nube.empty:
         opciones = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
-        seleccion = st.selectbox("Seleccionar para borrar:", opciones)
+        seleccion = st.selectbox("Seleccionar por ID:", opciones)
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
             st.session_state.confirm_delete = True
         
         if st.session_state.get('confirm_delete', False):
-            st.error("¿Confirmas borrado?")
+            st.error("¿Borrar definitivamente?")
             c1, c2 = st.columns(2)
             if c1.button("SÍ", type="primary", use_container_width=True):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
@@ -85,41 +88,30 @@ with st.sidebar:
                 st.session_state.confirm_delete = False
                 st.rerun()
 
-# --- ACCIÓN GUARDAR (CON TODAS LAS COLUMNAS) ---
+# --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
     nuevo = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "PRODUCTO": nombre,
-        "TIENDA": tienda_final,
-        "USD_BRUTO": usd_bruto,
-        "USD_CON_8.25": usd_tax,
-        "USD_FINAL_EQ": usd_final_eq,
-        "TC_MERCADO": tc_mercado,
-        "COMISION_PAGADA_MXN": comi_mxn,
-        "COSTO_TOTAL_MXN": costo_tot_mxn,
-        "VENTA_MXN": venta_mxn,
-        "GANANCIA_MXN": ganancia_mxn,
-        "RANGO_SEMANA": rango_actual,
-        "ESTADO_PAGO": "🔴 Debe",
-        "MONTO_RECIBIDO": 0.0,
-        "FECHA": datetime.now().strftime("%d/%m/%Y")
+        "PRODUCTO": nombre, "TIENDA": tienda_final, "USD_BRUTO": usd_bruto,
+        "USD_CON_8.25": usd_tax, "USD_FINAL_EQ": usd_final_eq, "TC_MERCADO": tc_mercado,
+        "COMISION_PAGADA_MXN": comi_mxn, "COSTO_TOTAL_MXN": costo_tot_mxn,
+        "VENTA_MXN": venta_mxn, "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_actual,
+        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "FECHA": datetime.now().strftime("%d/%m/%Y")
     }])
-    # Reordenar columnas para asegurar coincidencia exacta
-    columnas_ordenadas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "FECHA"]
-    nuevo = nuevo[columnas_ordenadas]
-    
-    conn.update(data=pd.concat([df_nube, nuevo], ignore_index=True))
+    columnas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "FECHA"]
+    conn.update(data=pd.concat([df_nube, nuevo[columnas]], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL Y COBRANZA ---
+# --- HISTORIAL CON ID VISIBLE ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
-    if "editor_v23" in st.session_state and st.session_state["editor_v23"]["edited_rows"]:
-        for idx, edits in st.session_state["editor_v23"]["edited_rows"].items():
+    if "ed_v24" in st.session_state and st.session_state["ed_v24"]["edited_rows"]:
+        for idx, edits in st.session_state["ed_v24"]["edited_rows"].items():
             if edits.get("ESTADO_PAGO") == "🟢 Pagado":
                 df_nube.at[idx, "MONTO_RECIBIDO"] = df_nube.at[idx, "VENTA_MXN"]
 
+    # Se quitó hide_index=True para que el ID sea visible
     df_editado = st.data_editor(
         df_nube.sort_index(ascending=False),
         column_config={
@@ -127,14 +119,14 @@ if not df_nube.empty:
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f")
         },
         disabled=[c for c in df_nube.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
-        use_container_width=True, key="editor_v23", hide_index=True
+        use_container_width=True, key="ed_v24"
     )
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
         conn.update(data=df_editado.sort_index())
         st.cache_data.clear()
         st.rerun()
 
-# --- REPORTE SEMANAL ---
+# --- REPORTE COMPACTO ---
 st.divider()
 st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
@@ -144,12 +136,12 @@ if not df_nube.empty:
     with c_b1: btn_sel = st.button("Consultar Selección", use_container_width=True)
     with c_b2: btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
 
-    def mostrar_stats(df_f, tit):
+    def stats(df_f, tit):
         st.markdown(f"#### {tit}")
         m1, m2, m3 = st.columns(3)
         m1.metric("Venta Total", f"${df_f['VENTA_MXN'].sum():,.2f}")
         m2.metric("Comisiones", f"${df_f['COMISION_PAGADA_MXN'].sum():,.2f}")
         m3.metric("Ganancia", f"${df_f['GANANCIA_MXN'].sum():,.2f}")
 
-    if btn_sel: mostrar_stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
-    if btn_act: mostrar_stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
+    if btn_sel: stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    if btn_act: stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
