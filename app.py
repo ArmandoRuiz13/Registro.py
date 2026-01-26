@@ -5,9 +5,9 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v19.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v20.0", layout="wide")
 
-st.title("🚀 Control de Ventas y Reporte Semanal")
+st.title("🚀 Control de Cobranza y Reportes Detallados")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -25,7 +25,7 @@ def obtener_tc():
     except: return 18.50
 tc_actual = obtener_tc()
 
-# --- CÁLCULO DE RANGO SEMANAL ACTUAL ---
+# --- RANGO SEMANAL ACTUAL ---
 hoy = datetime.now()
 inicio_semana = hoy - timedelta(days=hoy.weekday())
 fin_semana = inicio_semana + timedelta(days=6)
@@ -35,10 +35,9 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 with st.sidebar:
     st.header("📝 Nuevo Registro")
     nombre = st.text_input("PRODUCTO")
-    
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
-    tienda_final = st.text_input("Escribe la tienda:") if tienda_sel == "CUSTOM" else tienda_sel
+    tienda_final = st.text_input("Nombre de tienda:") if tienda_sel == "CUSTOM" else tienda_sel
     
     usd_bruto_txt = st.text_input("COSTO USD", value="0.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
@@ -64,13 +63,17 @@ with st.sidebar:
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
             st.session_state.confirm_delete = True
         if st.session_state.get('confirm_delete', False):
-            if st.button("SÍ, ELIMINAR", type="primary"):
+            col_b1, col_b2 = st.columns(2)
+            if col_b1.button("SÍ, BORRAR", type="primary"):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
                 st.cache_data.clear()
                 st.rerun()
+            if col_b2.button("CANCELAR"):
+                st.session_state.confirm_delete = False
+                st.rerun()
 
-# --- LÓGICA DE GUARDADO ---
+# --- LÓGICA GUARDADO ---
 if btn_guardar and nombre and usd_bruto > 0:
     usd_tax = usd_bruto * 1.0825
     comi = (usd_tax * 0.12) * 19.5
@@ -78,9 +81,9 @@ if btn_guardar and nombre and usd_bruto > 0:
     nuevo = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
         "PRODUCTO": nombre, "TIENDA": tienda_final, "USD_BRUTO": usd_bruto,
-        "COSTO_TOTAL_MXN": costo_mxn, "VENTA_MXN": venta_mxn,
-        "GANANCIA_MXN": venta_mxn - costo_mxn, "RANGO_SEMANA": rango_actual,
-        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0
+        "COMISION_PAGADA_MXN": comi, "COSTO_TOTAL_MXN": costo_mxn, 
+        "VENTA_MXN": venta_mxn, "GANANCIA_MXN": venta_mxn - costo_mxn, 
+        "RANGO_SEMANA": rango_actual, "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0
     }])
     conn.update(data=pd.concat([df_nube, nuevo], ignore_index=True))
     st.cache_data.clear()
@@ -101,34 +104,44 @@ if not df_nube.empty:
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f")
         },
         disabled=[c for c in df_nube.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
-        use_container_width=True, key="editor_c"
+        use_container_width=True, key="editor_c", hide_index=True
     )
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
         conn.update(data=df_editado.sort_index())
         st.cache_data.clear()
         st.rerun()
 
-# --- NUEVA SECCIÓN: REPORTE DE GANANCIAS ---
+# --- REPORTE SEMANAL COMPACTO ---
 st.divider()
-st.subheader("💰 Reporte de Ganancias Semanales")
+st.subheader("💰 Reporte Semanal Detallado")
 
 if not df_nube.empty:
-    col_rep1, col_rep2 = st.columns(2)
+    semanas_disponibles = df_nube["RANGO_SEMANA"].unique().tolist()
     
-    with col_rep1:
-        semanas_disponibles = df_nube["RANGO_SEMANA"].unique().tolist()
-        semana_sel = st.selectbox("Seleccionar semana para consultar:", semanas_disponibles)
-        if st.button("Obtener ganancias de esta semana"):
-            df_sem = df_nube[df_nube["RANGO_SEMANA"] == semana_sel]
-            ganancia_total = df_sem["GANANCIA_MXN"].sum()
-            st.success(f"Ganancia en {semana_sel}: **${ganancia_total:,.2f} MXN**")
+    # Fila de controles compacta
+    c_sel, c_b1, c_b2 = st.columns([2, 1, 1])
+    with c_sel:
+        semana_sel = st.selectbox("Seleccionar semana:", semanas_disponibles, label_visibility="collapsed")
+    with c_b1:
+        consultar_especifica = st.button("Consultar Selección", use_container_width=True)
+    with c_b2:
+        consultar_actual = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
 
-    with col_rep2:
-        st.write("Consulta rápida:")
-        if st.button("Obtener ganancias de la SEMANA ACTUAL", type="primary", use_container_width=True):
-            df_hoy = df_nube[df_nube["RANGO_SEMANA"] == rango_actual]
-            if not df_hoy.empty:
-                ganancia_hoy = df_hoy["GANANCIA_MXN"].sum()
-                st.info(f"Ganancia semana actual ({rango_actual}): **${ganancia_hoy:,.2f} MXN**")
-            else:
-                st.warning("No hay registros para la semana actual.")
+    # Función para mostrar métricas
+    def mostrar_metricas(df_filtrado, titulo):
+        st.markdown(f"#### Resultados: {titulo}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Vendido", f"${df_filtrado['VENTA_MXN'].sum():,.2f}")
+        m2.metric("Comisiones Pagadas", f"${df_filtrado['COMISION_PAGADA_MXN'].sum():,.2f}")
+        m3.metric("Ganancia Neta", f"${df_filtrado['GANANCIA_MXN'].sum():,.2f}")
+
+    if consultar_especifica:
+        df_res = df_nube[df_nube["RANGO_SEMANA"] == semana_sel]
+        mostrar_metricas(df_res, semana_sel)
+    
+    if consultar_actual:
+        df_res = df_nube[df_nube["RANGO_SEMANA"] == rango_actual]
+        if not df_res.empty:
+            mostrar_metricas(df_res, "Semana Actual")
+        else:
+            st.warning("No hay registros para la semana actual.")
