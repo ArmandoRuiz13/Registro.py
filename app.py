@@ -4,9 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v15.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v17.0", layout="wide")
 
-st.title("🚀 Control de Cobranza Inteligente")
+st.title("🚀 Control de Cobranza (ESTADO_PAGO)")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -35,12 +35,13 @@ with st.sidebar:
     tc_mercado = limpiar_numero(tc_mercado_txt)
     venta_mxn = limpiar_numero(venta_mxn_txt)
 
+    # BOTONES SEPARADOS
     btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
     st.divider()
     
-    # --- SECCIÓN ELIMINAR ---
+    # --- ELIMINAR CON CONFIRMACIÓN ---
     st.header("🗑️ Borrar Registro")
     df_nube = conn.read(ttl=0)
     if not df_nube.empty:
@@ -48,17 +49,20 @@ with st.sidebar:
         seleccion = st.selectbox("Selecciona para eliminar:", opciones)
         
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
-            st.session_state.confirmar_borrado = True
+            st.session_state.confirm_delete = True
         
-        if st.session_state.get('confirmar_borrado', False):
-            st.warning(f"¿Borrar '{seleccion.split(' - ')[1]}'? ")
-            if st.button("SÍ, BORRAR DEFINITIVAMENTE", type="primary"):
+        if st.session_state.get('confirm_delete', False):
+            st.error(f"⚠️ ¿Confirmas borrar '{seleccion.split(' - ')[1]}'?")
+            if st.button("SÍ, ELIMINAR", type="primary", use_container_width=True):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
-                st.session_state.confirmar_borrado = False
+                st.session_state.confirm_delete = False
                 st.cache_data.clear()
                 st.rerun()
+            if st.button("CANCELAR", use_container_width=True):
+                st.session_state.confirm_delete = False
+                st.rerun()
 
-# --- CÁLCULOS ---
+# --- LÓGICA DE CÁLCULO ---
 usd_con_tax = usd_bruto * 1.0825
 comision_mxn = (usd_con_tax * 0.12) * 19.5
 costo_total_mxn = (usd_con_tax * tc_mercado) + comision_mxn
@@ -81,55 +85,42 @@ if btn_guardar and nombre and usd_bruto > 0:
         "TC_MERCADO": tc_mercado, "COMISION_PAGADA_MXN": comision_mxn,
         "COSTO_TOTAL_MXN": costo_total_mxn, "VENTA_MXN": venta_mxn,
         "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_semanal,
-        "ESTADO": "Debe", "MONTO_RECIBIDO": 0.0
+        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0
     }])
     conn.update(data=pd.concat([df_nube, nuevo], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL EDITABLE CON COLORES ---
+# --- HISTORIAL EDITABLE ---
 st.divider()
-st.subheader("📋 Historial y Cobranza")
+st.subheader("📋 Historial de Registros")
 
 if not df_nube.empty:
-    # Procesar lógica de auto-pago antes de mostrar el editor
-    # Si detectamos que alguien marcó 'Pagado' en el editor (vía session_state)
-    if "main_editor" in st.session_state and st.session_state["main_editor"]["edited_rows"]:
-        for idx, edits in st.session_state["main_editor"]["edited_rows"].items():
-            if "ESTADO" in edits and edits["ESTADO"] == "Pagado":
-                # Si cambia a Pagado, el monto recibido es igual a VENTA_MXN
+    # Lógica de Auto-Pago: Si cambia a Pagado, se iguala a VENTA_MXN
+    if "editor_cobranza" in st.session_state and st.session_state["editor_cobranza"]["edited_rows"]:
+        for idx, edits in st.session_state["editor_cobranza"]["edited_rows"].items():
+            if "ESTADO_PAGO" in edits and edits["ESTADO_PAGO"] == "🟢 Pagado":
                 df_nube.at[idx, "MONTO_RECIBIDO"] = df_nube.at[idx, "VENTA_MXN"]
 
-    # Definimos los colores para la columna ESTADO usando mapeo visual
-    # Nota: Los colores de fondo en celdas st.data_editor se gestionan mejor con iconos y texto descriptivo
     edited_df = st.data_editor(
         df_nube.sort_index(ascending=False),
         column_config={
-            "ESTADO": st.column_config.SelectboxColumn(
-                "ESTADO",
+            "ESTADO_PAGO": st.column_config.SelectboxColumn(
+                "ESTADO_PAGO",
                 options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"],
-                required=True,
-                help="Selecciona el estado actual del pago"
+                required=True
             ),
-            "MONTO_RECIBIDO": st.column_config.NumberColumn(
-                "MONTO RECIBIDO", 
-                format="$%.2f",
-                help="Si seleccionas Pagado, este valor se actualizará al valor de VENTA_MXN"
-            ),
+            "MONTO_RECIBIDO": st.column_config.NumberColumn("MONTO RECIBIDO", format="$%.2f"),
             "VENTA_MXN": st.column_config.NumberColumn("VENTA_MXN", format="$%.2f"),
         },
-        disabled=[col for col in df_nube.columns if col not in ["ESTADO", "MONTO_RECIBIDO"]],
+        disabled=[col for col in df_nube.columns if col not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
         use_container_width=True,
         hide_index=True,
-        key="main_editor"
+        key="editor_cobranza"
     )
 
-    if st.button("💾 GUARDAR CAMBIOS EN LA NUBE", type="primary"):
-        # Limpiar emojis para guardar texto limpio en Excel
-        final_save_df = edited_df.copy()
-        final_save_df['ESTADO'] = final_save_df['ESTADO'].str.replace('🔴 ', '').str.replace('🟡 ', '').str.replace('🟢 ', '')
-        
-        conn.update(data=final_save_df.sort_index())
-        st.success("¡Sincronización completa con Google Sheets!")
+    if st.button("💾 ACTUALIZAR BASE DE DATOS"):
+        conn.update(data=edited_df.sort_index())
+        st.success("¡Cambios guardados con éxito!")
         st.cache_data.clear()
         st.rerun()
