@@ -4,9 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v14.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v15.0", layout="wide")
 
-st.title("🚀 Control de Ventas y Pagos")
+st.title("🚀 Control de Cobranza Inteligente")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -46,10 +46,17 @@ with st.sidebar:
     if not df_nube.empty:
         opciones = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
         seleccion = st.selectbox("Selecciona para eliminar:", opciones)
+        
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
-            conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
-            st.cache_data.clear()
-            st.rerun()
+            st.session_state.confirmar_borrado = True
+        
+        if st.session_state.get('confirmar_borrado', False):
+            st.warning(f"¿Borrar '{seleccion.split(' - ')[1]}'? ")
+            if st.button("SÍ, BORRAR DEFINITIVAMENTE", type="primary"):
+                conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
+                st.session_state.confirmar_borrado = False
+                st.cache_data.clear()
+                st.rerun()
 
 # --- CÁLCULOS ---
 usd_con_tax = usd_bruto * 1.0825
@@ -59,13 +66,13 @@ ganancia_mxn = venta_mxn - costo_total_mxn
 rango_semanal = f"{(datetime.now() - timedelta(days=datetime.now().weekday())).strftime('%d/%m/%y')} al {((datetime.now() - timedelta(days=datetime.now().weekday())) + timedelta(days=6)).strftime('%d/%m/%y')}"
 
 if btn_calcular and usd_bruto > 0:
-    st.info(f"### Análisis de: {nombre}")
+    st.info(f"### Análisis: {nombre}")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Comisión (12% @ 19.5)", f"${comision_mxn:,.2f} MXN")
-    c2.metric("Inversión Total", f"${costo_total_mxn:,.2f} MXN")
-    c3.metric("Ganancia Neta", f"${ganancia_mxn:,.2f} MXN")
+    c1.metric("Comisión MXN", f"${comision_mxn:,.2f}")
+    c2.metric("Inversión Total", f"${costo_total_mxn:,.2f}")
+    c3.metric("Ganancia Neta", f"${ganancia_mxn:,.2f}")
 
-# --- ACCIÓN: GUARDAR ---
+# --- GUARDAR NUEVO ---
 if btn_guardar and nombre and usd_bruto > 0:
     nuevo = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -74,53 +81,55 @@ if btn_guardar and nombre and usd_bruto > 0:
         "TC_MERCADO": tc_mercado, "COMISION_PAGADA_MXN": comision_mxn,
         "COSTO_TOTAL_MXN": costo_total_mxn, "VENTA_MXN": venta_mxn,
         "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_semanal,
-        "ESTADO_PAGO": "Debe", "MONTO_RECIBIDO": 0.0
+        "ESTADO": "Debe", "MONTO_RECIBIDO": 0.0
     }])
     conn.update(data=pd.concat([df_nube, nuevo], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL UNIFICADO Y EDITABLE ---
+# --- HISTORIAL EDITABLE CON COLORES ---
 st.divider()
 st.subheader("📋 Historial y Cobranza")
 
 if not df_nube.empty:
-    # 1. Editor de datos principal
+    # Procesar lógica de auto-pago antes de mostrar el editor
+    # Si detectamos que alguien marcó 'Pagado' en el editor (vía session_state)
+    if "main_editor" in st.session_state and st.session_state["main_editor"]["edited_rows"]:
+        for idx, edits in st.session_state["main_editor"]["edited_rows"].items():
+            if "ESTADO" in edits and edits["ESTADO"] == "Pagado":
+                # Si cambia a Pagado, el monto recibido es igual a VENTA_MXN
+                df_nube.at[idx, "MONTO_RECIBIDO"] = df_nube.at[idx, "VENTA_MXN"]
+
+    # Definimos los colores para la columna ESTADO usando mapeo visual
+    # Nota: Los colores de fondo en celdas st.data_editor se gestionan mejor con iconos y texto descriptivo
     edited_df = st.data_editor(
         df_nube.sort_index(ascending=False),
         column_config={
-            "ESTADO_PAGO": st.column_config.SelectboxColumn(
-                "ESTADO", 
-                options=["Debe", "Abonado", "Pagado"],
-                # Aquí definimos los colores para la casilla
-                help="Rojo: Debe | Amarillo: Abonado | Verde: Pagado"
+            "ESTADO": st.column_config.SelectboxColumn(
+                "ESTADO",
+                options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"],
+                required=True,
+                help="Selecciona el estado actual del pago"
             ),
-            "MONTO_RECIBIDO": st.column_config.NumberColumn("MONTO RECIBIDO", format="$%.2f"),
+            "MONTO_RECIBIDO": st.column_config.NumberColumn(
+                "MONTO RECIBIDO", 
+                format="$%.2f",
+                help="Si seleccionas Pagado, este valor se actualizará al valor de VENTA_MXN"
+            ),
+            "VENTA_MXN": st.column_config.NumberColumn("VENTA_MXN", format="$%.2f"),
         },
-        disabled=[col for col in df_nube.columns if col not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
+        disabled=[col for col in df_nube.columns if col not in ["ESTADO", "MONTO_RECIBIDO"]],
         use_container_width=True,
         hide_index=True,
         key="main_editor"
     )
 
-    # 2. Lógica Automática de Pago
-    # Si el usuario cambió a 'Pagado' en el editor, actualizamos el monto recibido
-    for i in edited_df.index:
-        # Detectamos si el estado es Pagado para igualar el monto
-        if edited_df.at[i, 'ESTADO_PAGO'] == 'Pagado':
-             # Solo actualizamos si el monto actual es distinto al costo total
-             if edited_df.at[i, 'MONTO_RECIBIDO'] != edited_df.at[i, 'COSTO_TOTAL_MXN']:
-                edited_df.at[i, 'MONTO_RECIBIDO'] = edited_df.at[i, 'COSTO_TOTAL_MXN']
-
-    # 3. Aplicar colores a la columna ESTADO (Solo lectura visual mediante Style)
-    def style_estado(val):
-        if val == 'Pagado': return 'background-color: #28a745; color: white'
-        if val == 'Abonado': return 'background-color: #ffc107; color: black'
-        return 'background-color: #dc3545; color: white'
-
-    # Mostramos el botón para guardar los cambios hechos en la tabla
-    if st.button("💾 GUARDAR CAMBIOS EN LA NUBE"):
-        conn.update(data=edited_df.sort_index()) # Guardamos manteniendo el orden original
-        st.success("¡Base de Datos Actualizada!")
+    if st.button("💾 GUARDAR CAMBIOS EN LA NUBE", type="primary"):
+        # Limpiar emojis para guardar texto limpio en Excel
+        final_save_df = edited_df.copy()
+        final_save_df['ESTADO'] = final_save_df['ESTADO'].str.replace('🔴 ', '').str.replace('🟡 ', '').str.replace('🟢 ', '')
+        
+        conn.update(data=final_save_df.sort_index())
+        st.success("¡Sincronización completa con Google Sheets!")
         st.cache_data.clear()
         st.rerun()
