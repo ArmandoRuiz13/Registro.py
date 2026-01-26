@@ -4,12 +4,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v11.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v12.0", layout="wide")
 
-# Estilo visual
+# Estilo para inputs
 st.markdown("<style>.stTextInput input { font-size: 18px; }</style>", unsafe_allow_html=True)
 
-st.title("🚀 Calculadora y Control de Pagos")
+st.title("🚀 Calculadora y Control de Pagos Editable")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -19,7 +19,7 @@ def obtener_tc():
     except: return 18.50
 tc_actual = obtener_tc()
 
-# --- SIDEBAR: REGISTRO Y ACTUALIZACIÓN ---
+# --- SIDEBAR: REGISTRO ---
 with st.sidebar:
     st.header("📝 Nuevo Registro")
     nombre = st.text_input("PRODUCTO", placeholder="Ej: Tenis Nike")
@@ -28,9 +28,6 @@ with st.sidebar:
     usd_bruto_txt = st.text_input("COSTO USD (Sin Tax)", placeholder="0.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
     venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="0.00")
-    
-    # Nuevos campos de pago
-    estado_pago = st.selectbox("ESTADO DE PAGO", ["Debe", "Abonado", "Pagado"])
     
     def limpiar_numero(texto):
         if not texto: return 0.0
@@ -41,19 +38,8 @@ with st.sidebar:
     tc_mercado = limpiar_numero(tc_mercado_txt)
     venta_mxn = limpiar_numero(venta_mxn_txt)
 
-    # Lógica de Monto Recibido
-    usd_con_tax = usd_bruto * 1.0825
-    comision_mxn = (usd_con_tax * 0.12) * 19.5
-    costo_total_mxn = (usd_con_tax * tc_mercado) + comision_mxn
-    
-    if estado_pago == "Pagado":
-        monto_recibido = costo_total_mxn
-        st.caption(f"Se registrará pago total: ${monto_recibido:,.2f}")
-    elif estado_pago == "Abonado":
-        monto_recibido = st.number_input("¿Cuánto abonó?", min_value=0.0, step=100.0)
-    else:
-        monto_recibido = 0.0
-
+    # Botones separados como pediste
+    btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
     st.divider()
@@ -65,17 +51,27 @@ with st.sidebar:
         opciones = [f"{i} - {df_actual.loc[i, 'PRODUCTO']}" for i in reversed(df_actual.index)]
         seleccion = st.selectbox("Selecciona para eliminar:", opciones)
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
-            indice = int(seleccion.split(" - ")[0])
-            conn.update(data=df_actual.drop(indice))
+            conn.update(data=df_actual.drop(int(seleccion.split(" - ")[0])))
             st.cache_data.clear()
             st.rerun()
 
-# --- CÁLCULOS ADICIONALES ---
+# --- LÓGICA DE CÁLCULOS ---
+usd_con_tax = usd_bruto * 1.0825
+comision_mxn = (usd_con_tax * 0.12) * 19.5
+costo_total_mxn = (usd_con_tax * tc_mercado) + comision_mxn
 ganancia_mxn = venta_mxn - costo_total_mxn
 usd_final_eq = costo_total_mxn / tc_mercado if tc_mercado > 0 else 0
 rango_semanal = f"{(datetime.now() - timedelta(days=datetime.now().weekday())).strftime('%d/%m/%y')} al {((datetime.now() - timedelta(days=datetime.now().weekday())) + timedelta(days=6)).strftime('%d/%m/%y')}"
 
-# --- GUARDAR ---
+# --- ACCIÓN: CALCULAR ---
+if btn_calcular and usd_bruto > 0:
+    st.info(f"### Análisis de: {nombre}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Comisión (12% @ 19.5)", f"${comision_mxn:,.2f} MXN")
+    c2.metric("Inversión Total", f"${costo_total_mxn:,.2f} MXN")
+    c3.metric("Ganancia Neta", f"${ganancia_mxn:,.2f} MXN")
+
+# --- ACCIÓN: GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
     nuevo_registro = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -90,22 +86,41 @@ if btn_guardar and nombre and usd_bruto > 0:
         "VENTA_MXN": venta_mxn,
         "GANANCIA_MXN": ganancia_mxn,
         "RANGO_SEMANA": rango_semanal,
-        "ESTADO_PAGO": estado_pago,
-        "MONTO_RECIBIDO": monto_recibido
+        "ESTADO_PAGO": "Debe",  # Por defecto siempre debe
+        "MONTO_RECIBIDO": 0.0
     }])
     conn.update(data=pd.concat([df_actual, nuevo_registro], ignore_index=True))
     st.success("✅ Guardado con éxito")
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL ---
+# --- HISTORIAL EDITABLE ---
 st.divider()
-st.subheader("📋 Historial de Registros y Cobranza")
-df_historial = conn.read(ttl=0)
-if not df_historial.empty:
-    # Formatear la tabla para resaltar los estados
-    def color_estado(val):
-        color = '#ff4b4b' if val == 'Debe' else '#f9d71c' if val == 'Abonado' else '#09ab3b'
-        return f'color: {color}; font-weight: bold'
-    
-    st.dataframe(df_historial.sort_index(ascending=False).style.applymap(color_estado, subset=['ESTADO_PAGO']), use_container_width=True)
+st.subheader("📋 Historial Editable (Haz clic en las celdas para actualizar)")
+df_editable = conn.read(ttl=0)
+
+if not df_editable.empty:
+    # Configuramos la tabla para que solo las columnas de pago sean editables
+    edited_df = st.data_editor(
+        df_editable,
+        column_config={
+            "ESTADO_PAGO": st.column_config.SelectboxColumn(
+                "ESTADO_PAGO",
+                options=["Debe", "Abonado", "Pagado"],
+                required=True,
+            ),
+            "MONTO_RECIBIDO": st.column_config.NumberColumn(
+                "MONTO_RECIBIDO",
+                format="$%.2f",
+            ),
+        },
+        disabled=["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA"],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
+        conn.update(data=edited_df)
+        st.success("¡Base de datos actualizada!")
+        st.cache_data.clear()
+        st.rerun()
