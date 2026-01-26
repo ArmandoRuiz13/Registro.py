@@ -5,18 +5,16 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v20.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v21.0", layout="wide")
 
-st.title("🚀 Control de Cobranza y Reportes Detallados")
+st.title("🚀 Control de Ventas Profesional")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
     for i in range(3):
-        try:
-            return conn.read(ttl=0)
-        except Exception:
-            time.sleep(1)
+        try: return conn.read(ttl=0)
+        except Exception: time.sleep(1)
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -34,17 +32,20 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 # --- SIDEBAR: REGISTRO ---
 with st.sidebar:
     st.header("📝 Nuevo Registro")
-    nombre = st.text_input("PRODUCTO")
+    nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
+    
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
-    tienda_final = st.text_input("Nombre de tienda:") if tienda_sel == "CUSTOM" else tienda_sel
+    tienda_final = st.text_input("Nombre de tienda custom:") if tienda_sel == "CUSTOM" else tienda_sel
     
-    usd_bruto_txt = st.text_input("COSTO USD", value="0.00")
+    # Marcamos el valor como None y usamos placeholder para que se borre al escribir
+    usd_bruto_txt = st.text_input("COSTO USD (Sin Tax)", placeholder="Ej: 50.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
-    venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", value="0.00")
+    venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="Ej: 1500.00")
     
     def limpiar_num(t):
-        try: return float(t.replace(',', ''))
+        if not t: return 0.0
+        try: return float(t.replace(',', '').replace('$', ''))
         except: return 0.0
 
     usd_bruto = limpiar_num(usd_bruto_txt)
@@ -63,13 +64,13 @@ with st.sidebar:
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
             st.session_state.confirm_delete = True
         if st.session_state.get('confirm_delete', False):
-            col_b1, col_b2 = st.columns(2)
-            if col_b1.button("SÍ, BORRAR", type="primary"):
+            c_b1, c_b2 = st.columns(2)
+            if c_b1.button("SÍ, BORRAR", type="primary"):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
                 st.cache_data.clear()
                 st.rerun()
-            if col_b2.button("CANCELAR"):
+            if c_b2.button("CANCELAR"):
                 st.session_state.confirm_delete = False
                 st.rerun()
 
@@ -111,37 +112,22 @@ if not df_nube.empty:
         st.cache_data.clear()
         st.rerun()
 
-# --- REPORTE SEMANAL COMPACTO ---
+# --- REPORTE SEMANAL ---
 st.divider()
 st.subheader("💰 Reporte Semanal Detallado")
-
 if not df_nube.empty:
-    semanas_disponibles = df_nube["RANGO_SEMANA"].unique().tolist()
-    
-    # Fila de controles compacta
+    semanas = df_nube["RANGO_SEMANA"].unique().tolist()
     c_sel, c_b1, c_b2 = st.columns([2, 1, 1])
-    with c_sel:
-        semana_sel = st.selectbox("Seleccionar semana:", semanas_disponibles, label_visibility="collapsed")
-    with c_b1:
-        consultar_especifica = st.button("Consultar Selección", use_container_width=True)
-    with c_b2:
-        consultar_actual = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
+    with c_sel: sem_sel = st.selectbox("Semana:", semanas, label_visibility="collapsed")
+    with c_b1: btn_sel = st.button("Consultar Selección", use_container_width=True)
+    with c_b2: btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
 
-    # Función para mostrar métricas
-    def mostrar_metricas(df_filtrado, titulo):
-        st.markdown(f"#### Resultados: {titulo}")
+    def mostrar_stats(df_f, tit):
+        st.markdown(f"#### {tit}")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Vendido", f"${df_filtrado['VENTA_MXN'].sum():,.2f}")
-        m2.metric("Comisiones Pagadas", f"${df_filtrado['COMISION_PAGADA_MXN'].sum():,.2f}")
-        m3.metric("Ganancia Neta", f"${df_filtrado['GANANCIA_MXN'].sum():,.2f}")
+        m1.metric("Total Vendido", f"${df_f['VENTA_MXN'].sum():,.2f}")
+        m2.metric("Comisiones", f"${df_f['COMISION_PAGADA_MXN'].sum():,.2f}")
+        m3.metric("Ganancia Neta", f"${df_f['GANANCIA_MXN'].sum():,.2f}")
 
-    if consultar_especifica:
-        df_res = df_nube[df_nube["RANGO_SEMANA"] == semana_sel]
-        mostrar_metricas(df_res, semana_sel)
-    
-    if consultar_actual:
-        df_res = df_nube[df_nube["RANGO_SEMANA"] == rango_actual]
-        if not df_res.empty:
-            mostrar_metricas(df_res, "Semana Actual")
-        else:
-            st.warning("No hay registros para la semana actual.")
+    if btn_sel: mostrar_stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    if btn_act: mostrar_stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
