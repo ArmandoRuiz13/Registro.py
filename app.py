@@ -4,20 +4,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v13.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v14.0", layout="wide")
 
-# Estilos de color para la tabla (CSS)
-st.markdown("""
-    <style>
-    .stTextInput input { font-size: 18px; }
-    /* Colores para las filas según estado */
-    .pagado { background-color: #d4edda !important; }
-    .abonado { background-color: #fff3cd !important; }
-    .debe { background-color: #f8d7da !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🚀 Calculadora y Control de Pagos Inteligente")
+st.title("🚀 Control de Ventas y Pagos")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -91,45 +80,47 @@ if btn_guardar and nombre and usd_bruto > 0:
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL CON LÓGICA DE COLOR Y AUTO-PAGO ---
+# --- HISTORIAL UNIFICADO Y EDITABLE ---
 st.divider()
-st.subheader("📋 Control de Cobranza")
+st.subheader("📋 Historial y Cobranza")
 
 if not df_nube.empty:
-    # 1. Función para aplicar colores a la tabla visual
-    def highlight_estado(row):
-        if row['ESTADO_PAGO'] == 'Pagado':
-            return ['background-color: #28a745; color: white'] * len(row)
-        elif row['ESTADO_PAGO'] == 'Abonado':
-            return ['background-color: #ffc107; color: black'] * len(row)
-        else:
-            return ['background-color: #dc3545; color: white'] * len(row)
-
-    # 2. Editor de datos
+    # 1. Editor de datos principal
     edited_df = st.data_editor(
-        df_nube,
+        df_nube.sort_index(ascending=False),
         column_config={
-            "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["Debe", "Abonado", "Pagado"]),
+            "ESTADO_PAGO": st.column_config.SelectboxColumn(
+                "ESTADO", 
+                options=["Debe", "Abonado", "Pagado"],
+                # Aquí definimos los colores para la casilla
+                help="Rojo: Debe | Amarillo: Abonado | Verde: Pagado"
+            ),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("MONTO RECIBIDO", format="$%.2f"),
         },
         disabled=[col for col in df_nube.columns if col not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
         use_container_width=True,
         hide_index=True,
-        key="data_editor"
+        key="main_editor"
     )
 
-    # 3. Lógica Automática: Si cambió a 'Pagado', igualar monto al costo total
-    # Comparamos el original con el editado para aplicar la regla
+    # 2. Lógica Automática de Pago
+    # Si el usuario cambió a 'Pagado' en el editor, actualizamos el monto recibido
     for i in edited_df.index:
-        if edited_df.at[i, 'ESTADO_PAGO'] == 'Pagado' and df_nube.at[i, 'ESTADO_PAGO'] != 'Pagado':
-            edited_df.at[i, 'MONTO_RECIBIDO'] = edited_df.at[i, 'COSTO_TOTAL_MXN']
+        # Detectamos si el estado es Pagado para igualar el monto
+        if edited_df.at[i, 'ESTADO_PAGO'] == 'Pagado':
+             # Solo actualizamos si el monto actual es distinto al costo total
+             if edited_df.at[i, 'MONTO_RECIBIDO'] != edited_df.at[i, 'COSTO_TOTAL_MXN']:
+                edited_df.at[i, 'MONTO_RECIBIDO'] = edited_df.at[i, 'COSTO_TOTAL_MXN']
 
-    if st.button("💾 CONFIRMAR Y GUARDAR CAMBIOS"):
-        conn.update(data=edited_df)
-        st.success("¡Datos sincronizados con Google Sheets!")
+    # 3. Aplicar colores a la columna ESTADO (Solo lectura visual mediante Style)
+    def style_estado(val):
+        if val == 'Pagado': return 'background-color: #28a745; color: white'
+        if val == 'Abonado': return 'background-color: #ffc107; color: black'
+        return 'background-color: #dc3545; color: white'
+
+    # Mostramos el botón para guardar los cambios hechos en la tabla
+    if st.button("💾 GUARDAR CAMBIOS EN LA NUBE"):
+        conn.update(data=edited_df.sort_index()) # Guardamos manteniendo el orden original
+        st.success("¡Base de Datos Actualizada!")
         st.cache_data.clear()
         st.rerun()
-
-    # 4. Vista previa con colores (Solo lectura para ver los colores aplicados)
-    st.caption("Vista de colores actual:")
-    st.dataframe(edited_df.style.apply(highlight_estado, axis=1), use_container_width=True)
