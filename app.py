@@ -4,12 +4,20 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v12.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v13.0", layout="wide")
 
-# Estilo para inputs
-st.markdown("<style>.stTextInput input { font-size: 18px; }</style>", unsafe_allow_html=True)
+# Estilos de color para la tabla (CSS)
+st.markdown("""
+    <style>
+    .stTextInput input { font-size: 18px; }
+    /* Colores para las filas según estado */
+    .pagado { background-color: #d4edda !important; }
+    .abonado { background-color: #fff3cd !important; }
+    .debe { background-color: #f8d7da !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("🚀 Calculadora y Control de Pagos Editable")
+st.title("🚀 Calculadora y Control de Pagos Inteligente")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -38,7 +46,6 @@ with st.sidebar:
     tc_mercado = limpiar_numero(tc_mercado_txt)
     venta_mxn = limpiar_numero(venta_mxn_txt)
 
-    # Botones separados como pediste
     btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
@@ -46,24 +53,22 @@ with st.sidebar:
     
     # --- SECCIÓN ELIMINAR ---
     st.header("🗑️ Borrar Registro")
-    df_actual = conn.read(ttl=0)
-    if not df_actual.empty:
-        opciones = [f"{i} - {df_actual.loc[i, 'PRODUCTO']}" for i in reversed(df_actual.index)]
+    df_nube = conn.read(ttl=0)
+    if not df_nube.empty:
+        opciones = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
         seleccion = st.selectbox("Selecciona para eliminar:", opciones)
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
-            conn.update(data=df_actual.drop(int(seleccion.split(" - ")[0])))
+            conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
             st.cache_data.clear()
             st.rerun()
 
-# --- LÓGICA DE CÁLCULOS ---
+# --- CÁLCULOS ---
 usd_con_tax = usd_bruto * 1.0825
 comision_mxn = (usd_con_tax * 0.12) * 19.5
 costo_total_mxn = (usd_con_tax * tc_mercado) + comision_mxn
 ganancia_mxn = venta_mxn - costo_total_mxn
-usd_final_eq = costo_total_mxn / tc_mercado if tc_mercado > 0 else 0
 rango_semanal = f"{(datetime.now() - timedelta(days=datetime.now().weekday())).strftime('%d/%m/%y')} al {((datetime.now() - timedelta(days=datetime.now().weekday())) + timedelta(days=6)).strftime('%d/%m/%y')}"
 
-# --- ACCIÓN: CALCULAR ---
 if btn_calcular and usd_bruto > 0:
     st.info(f"### Análisis de: {nombre}")
     c1, c2, c3 = st.columns(3)
@@ -73,54 +78,58 @@ if btn_calcular and usd_bruto > 0:
 
 # --- ACCIÓN: GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
-    nuevo_registro = pd.DataFrame([{
+    nuevo = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "PRODUCTO": nombre,
-        "TIENDA": tienda,
-        "USD_BRUTO": usd_bruto,
-        "USD_CON_8.25": usd_con_tax,
-        "USD_FINAL_EQ": usd_final_eq,
-        "TC_MERCADO": tc_mercado,
-        "COMISION_PAGADA_MXN": comision_mxn,
-        "COSTO_TOTAL_MXN": costo_total_mxn,
-        "VENTA_MXN": venta_mxn,
-        "GANANCIA_MXN": ganancia_mxn,
-        "RANGO_SEMANA": rango_semanal,
-        "ESTADO_PAGO": "Debe",  # Por defecto siempre debe
-        "MONTO_RECIBIDO": 0.0
+        "PRODUCTO": nombre, "TIENDA": tienda, "USD_BRUTO": usd_bruto,
+        "USD_CON_8.25": usd_con_tax, "USD_FINAL_EQ": costo_total_mxn/tc_mercado,
+        "TC_MERCADO": tc_mercado, "COMISION_PAGADA_MXN": comision_mxn,
+        "COSTO_TOTAL_MXN": costo_total_mxn, "VENTA_MXN": venta_mxn,
+        "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_semanal,
+        "ESTADO_PAGO": "Debe", "MONTO_RECIBIDO": 0.0
     }])
-    conn.update(data=pd.concat([df_actual, nuevo_registro], ignore_index=True))
-    st.success("✅ Guardado con éxito")
+    conn.update(data=pd.concat([df_nube, nuevo], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL EDITABLE ---
+# --- HISTORIAL CON LÓGICA DE COLOR Y AUTO-PAGO ---
 st.divider()
-st.subheader("📋 Historial Editable (Haz clic en las celdas para actualizar)")
-df_editable = conn.read(ttl=0)
+st.subheader("📋 Control de Cobranza")
 
-if not df_editable.empty:
-    # Configuramos la tabla para que solo las columnas de pago sean editables
+if not df_nube.empty:
+    # 1. Función para aplicar colores a la tabla visual
+    def highlight_estado(row):
+        if row['ESTADO_PAGO'] == 'Pagado':
+            return ['background-color: #28a745; color: white'] * len(row)
+        elif row['ESTADO_PAGO'] == 'Abonado':
+            return ['background-color: #ffc107; color: black'] * len(row)
+        else:
+            return ['background-color: #dc3545; color: white'] * len(row)
+
+    # 2. Editor de datos
     edited_df = st.data_editor(
-        df_editable,
+        df_nube,
         column_config={
-            "ESTADO_PAGO": st.column_config.SelectboxColumn(
-                "ESTADO_PAGO",
-                options=["Debe", "Abonado", "Pagado"],
-                required=True,
-            ),
-            "MONTO_RECIBIDO": st.column_config.NumberColumn(
-                "MONTO_RECIBIDO",
-                format="$%.2f",
-            ),
+            "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["Debe", "Abonado", "Pagado"]),
+            "MONTO_RECIBIDO": st.column_config.NumberColumn("MONTO RECIBIDO", format="$%.2f"),
         },
-        disabled=["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA"],
+        disabled=[col for col in df_nube.columns if col not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
         use_container_width=True,
         hide_index=True,
+        key="data_editor"
     )
 
-    if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
+    # 3. Lógica Automática: Si cambió a 'Pagado', igualar monto al costo total
+    # Comparamos el original con el editado para aplicar la regla
+    for i in edited_df.index:
+        if edited_df.at[i, 'ESTADO_PAGO'] == 'Pagado' and df_nube.at[i, 'ESTADO_PAGO'] != 'Pagado':
+            edited_df.at[i, 'MONTO_RECIBIDO'] = edited_df.at[i, 'COSTO_TOTAL_MXN']
+
+    if st.button("💾 CONFIRMAR Y GUARDAR CAMBIOS"):
         conn.update(data=edited_df)
-        st.success("¡Base de datos actualizada!")
+        st.success("¡Datos sincronizados con Google Sheets!")
         st.cache_data.clear()
         st.rerun()
+
+    # 4. Vista previa con colores (Solo lectura para ver los colores aplicados)
+    st.caption("Vista de colores actual:")
+    st.dataframe(edited_df.style.apply(highlight_estado, axis=1), use_container_width=True)
