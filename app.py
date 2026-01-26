@@ -1,14 +1,24 @@
 import streamlit as st
 import requests
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v17.0", layout="wide")
+st.set_page_config(page_title="Gestor Pro v18.0", layout="wide")
 
-st.title("🚀 Control de Cobranza (ESTADO_PAGO)")
+st.title("🚀 Control de Ventas y Tienda Custom")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Función de lectura segura para evitar el APIError
+def lectura_segura():
+    for i in range(3): # Intenta 3 veces si falla
+        try:
+            return conn.read(ttl=0)
+        except Exception:
+            time.sleep(1)
+    return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def obtener_tc():
@@ -20,7 +30,16 @@ tc_actual = obtener_tc()
 with st.sidebar:
     st.header("📝 Nuevo Registro")
     nombre = st.text_input("PRODUCTO", placeholder="Ej: Tenis Nike")
-    tienda = st.selectbox("TIENDA", ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"])
+    
+    # Lógica de TIENDA CUSTOM
+    opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
+    tienda_sel = st.selectbox("TIENDA", opciones_tienda)
+    
+    # Solo aparece si eliges CUSTOM
+    if tienda_sel == "CUSTOM":
+        tienda_final = st.text_input("Escribe el nombre de la tienda:")
+    else:
+        tienda_final = tienda_sel
     
     usd_bruto_txt = st.text_input("COSTO USD (Sin Tax)", placeholder="0.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
@@ -35,7 +54,6 @@ with st.sidebar:
     tc_mercado = limpiar_numero(tc_mercado_txt)
     venta_mxn = limpiar_numero(venta_mxn_txt)
 
-    # BOTONES SEPARADOS
     btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
@@ -43,7 +61,7 @@ with st.sidebar:
     
     # --- ELIMINAR CON CONFIRMACIÓN ---
     st.header("🗑️ Borrar Registro")
-    df_nube = conn.read(ttl=0)
+    df_nube = lectura_segura()
     if not df_nube.empty:
         opciones = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
         seleccion = st.selectbox("Selecciona para eliminar:", opciones)
@@ -52,7 +70,7 @@ with st.sidebar:
             st.session_state.confirm_delete = True
         
         if st.session_state.get('confirm_delete', False):
-            st.error(f"⚠️ ¿Confirmas borrar '{seleccion.split(' - ')[1]}'?")
+            st.error(f"⚠️ ¿Borrar '{seleccion.split(' - ')[1]}'?")
             if st.button("SÍ, ELIMINAR", type="primary", use_container_width=True):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
@@ -62,7 +80,7 @@ with st.sidebar:
                 st.session_state.confirm_delete = False
                 st.rerun()
 
-# --- LÓGICA DE CÁLCULO ---
+# --- CÁLCULOS ---
 usd_con_tax = usd_bruto * 1.0825
 comision_mxn = (usd_con_tax * 0.12) * 19.5
 costo_total_mxn = (usd_con_tax * tc_mercado) + comision_mxn
@@ -80,8 +98,8 @@ if btn_calcular and usd_bruto > 0:
 if btn_guardar and nombre and usd_bruto > 0:
     nuevo = pd.DataFrame([{
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "PRODUCTO": nombre, "TIENDA": tienda, "USD_BRUTO": usd_bruto,
-        "USD_CON_8.25": usd_con_tax, "USD_FINAL_EQ": costo_total_mxn/tc_mercado,
+        "PRODUCTO": nombre, "TIENDA": tienda_final, "USD_BRUTO": usd_bruto,
+        "USD_CON_8.25": usd_con_tax, "USD_FINAL_EQ": costo_total_mxn/tc_mercado if tc_mercado > 0 else 0,
         "TC_MERCADO": tc_mercado, "COMISION_PAGADA_MXN": comision_mxn,
         "COSTO_TOTAL_MXN": costo_total_mxn, "VENTA_MXN": venta_mxn,
         "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_semanal,
@@ -96,10 +114,10 @@ st.divider()
 st.subheader("📋 Historial de Registros")
 
 if not df_nube.empty:
-    # Lógica de Auto-Pago: Si cambia a Pagado, se iguala a VENTA_MXN
     if "editor_cobranza" in st.session_state and st.session_state["editor_cobranza"]["edited_rows"]:
         for idx, edits in st.session_state["editor_cobranza"]["edited_rows"].items():
             if "ESTADO_PAGO" in edits and edits["ESTADO_PAGO"] == "🟢 Pagado":
+                # Cambiado para usar VENTA_MXN como pediste
                 df_nube.at[idx, "MONTO_RECIBIDO"] = df_nube.at[idx, "VENTA_MXN"]
 
     edited_df = st.data_editor(
@@ -111,7 +129,6 @@ if not df_nube.empty:
                 required=True
             ),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("MONTO RECIBIDO", format="$%.2f"),
-            "VENTA_MXN": st.column_config.NumberColumn("VENTA_MXN", format="$%.2f"),
         },
         disabled=[col for col in df_nube.columns if col not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
         use_container_width=True,
@@ -121,6 +138,6 @@ if not df_nube.empty:
 
     if st.button("💾 ACTUALIZAR BASE DE DATOS"):
         conn.update(data=edited_df.sort_index())
-        st.success("¡Cambios guardados con éxito!")
+        st.success("¡Base de datos sincronizada!")
         st.cache_data.clear()
         st.rerun()
