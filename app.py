@@ -5,9 +5,9 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v24", layout="wide")
+st.set_page_config(page_title="Gestor Pro v25", layout="wide")
 
-st.title("🚀 Control de Ventas con ID Visual")
+st.title("🚀 Control de Ventas (v25 - Auto-Pago Corregido)")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -25,7 +25,7 @@ tc_actual = obtener_tc()
 
 # --- DATOS ACTUALES ---
 df_nube = lectura_segura()
-proximo_id = len(df_nube) # Calculamos el ID que sigue
+proximo_id = len(df_nube)
 
 # --- RANGO SEMANAL ACTUAL ---
 hoy = datetime.now()
@@ -35,14 +35,14 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 
 # --- SIDEBAR: REGISTRO ---
 with st.sidebar:
-    st.header(f"📝 Registro (ID Sugerido: {proximo_id})")
+    st.header(f"📝 Registro (ID: {proximo_id})")
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
-    tienda_final = st.text_input("Nombre de tienda:") if tienda_sel == "CUSTOM" else tienda_sel
+    tienda_final = st.text_input("Tienda custom:") if tienda_sel == "CUSTOM" else tienda_sel
     
-    usd_bruto_txt = st.text_input("COSTO USD (Sin Tax)", placeholder="Ej: 50.00")
+    usd_bruto_txt = st.text_input("COSTO USD", placeholder="Ej: 50.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
     venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="Ej: 1500.00")
     
@@ -55,36 +55,34 @@ with st.sidebar:
     tc_mercado = limpiar_num(tc_mercado_txt)
     venta_mxn = limpiar_num(venta_mxn_txt)
 
-    # --- CALCULOS ---
     usd_tax = usd_bruto * 1.0825
     comi_mxn = (usd_tax * 0.12) * 19.5
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
     ganancia_mxn = venta_mxn - costo_tot_mxn
     usd_final_eq = costo_tot_mxn / tc_mercado if tc_mercado > 0 else 0
 
-    btn_calcular = st.button("CALCULAR 🔍", use_container_width=True)
-    if btn_calcular:
-        st.info(f"ID a Generar: {proximo_id}\n\nComisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
+    if st.button("CALCULAR 🔍", use_container_width=True):
+        st.info(f"Comisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
     st.divider()
     st.header("🗑️ Borrar Registro")
     if not df_nube.empty:
-        opciones = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
-        seleccion = st.selectbox("Seleccionar por ID:", opciones)
+        opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
+        seleccion = st.selectbox("ID a borrar:", opciones_del)
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
             st.session_state.confirm_delete = True
         
         if st.session_state.get('confirm_delete', False):
-            st.error("¿Borrar definitivamente?")
+            st.error("¿Confirmas?")
             c1, c2 = st.columns(2)
-            if c1.button("SÍ", type="primary", use_container_width=True):
+            if c1.button("SÍ", type="primary"):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
                 st.cache_data.clear()
                 st.rerun()
-            if c2.button("NO", use_container_width=True):
+            if c2.button("NO"):
                 st.session_state.confirm_delete = False
                 st.rerun()
 
@@ -103,30 +101,36 @@ if btn_guardar and nombre and usd_bruto > 0:
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL CON ID VISIBLE ---
+# --- HISTORIAL Y COBRANZA (CORRECCIÓN AUTO-PAGO) ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
-    if "ed_v24" in st.session_state and st.session_state["ed_v24"]["edited_rows"]:
-        for idx, edits in st.session_state["ed_v24"]["edited_rows"].items():
-            if edits.get("ESTADO_PAGO") == "🟢 Pagado":
-                df_nube.at[idx, "MONTO_RECIBIDO"] = df_nube.at[idx, "VENTA_MXN"]
-
-    # Se quitó hide_index=True para que el ID sea visible
-    df_editado = st.data_editor(
-        df_nube.sort_index(ascending=False),
+    # Mostramos la tabla. Nota: El ID (índice) es visible.
+    df_para_editar = df_nube.sort_index(ascending=False)
+    
+    edited_df = st.data_editor(
+        df_para_editar,
         column_config={
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f")
         },
         disabled=[c for c in df_nube.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
-        use_container_width=True, key="ed_v24"
+        use_container_width=True, key="ed_v25"
     )
+
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-        conn.update(data=df_editado.sort_index())
+        # Lógica de Auto-Pago: Antes de subir, revisamos fila por fila
+        # Si alguien puso 'Pagado', igualamos el monto recibido a la venta
+        for idx in edited_df.index:
+            if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
+                edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
+        
+        # Guardar en orden original de ID (sort_index)
+        conn.update(data=edited_df.sort_index())
+        st.success("¡Información actualizada!")
         st.cache_data.clear()
         st.rerun()
 
-# --- REPORTE COMPACTO ---
+# --- REPORTES ---
 st.divider()
 st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
