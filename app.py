@@ -7,7 +7,7 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Gestor Pro v25", layout="wide")
 
-st.title("🚀 Control de Ventas)")
+st.title("🚀 Control de Ventas")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
