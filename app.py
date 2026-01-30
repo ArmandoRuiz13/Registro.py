@@ -56,7 +56,7 @@ with st.sidebar:
     venta_mxn = limpiar_num(venta_mxn_txt)
 
     usd_tax = usd_bruto * 1.0825
-    comi_mxn = (usd_tax * 0.12) * 19.5
+    comi_mxn = (usd_tax * 0.12) * 19
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
     ganancia_mxn = venta_mxn - costo_tot_mxn
     usd_final_eq = costo_tot_mxn / tc_mercado if tc_mercado > 0 else 0
