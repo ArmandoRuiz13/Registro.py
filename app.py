@@ -94,37 +94,40 @@ if btn_guardar and nombre and usd_bruto > 0:
         "USD_CON_8.25": usd_tax, "USD_FINAL_EQ": usd_final_eq, "TC_MERCADO": tc_mercado,
         "COMISION_PAGADA_MXN": comi_mxn, "COSTO_TOTAL_MXN": costo_tot_mxn,
         "VENTA_MXN": venta_mxn, "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_actual,
-        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "FECHA": datetime.now().strftime("%d/%m/%Y")
+        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "COMI_CHECK": False, "FECHA": datetime.now().strftime("%d/%m/%Y")
     }])
-    columnas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "FECHA"]
+    # Lista de columnas actualizada
+    columnas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
     conn.update(data=pd.concat([df_nube, nuevo[columnas]], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
-# --- HISTORIAL Y COBRANZA (CORRECCIÓN AUTO-PAGO) ---
+# --- HISTORIAL Y COBRANZA ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
-    # Mostramos la tabla. Nota: El ID (índice) es visible.
     df_para_editar = df_nube.sort_index(ascending=False)
     
+    # Si la columna no existe en registros viejos de la nube, la creamos para evitar errores
+    if "COMI_CHECK" not in df_para_editar.columns:
+        df_para_editar["COMI_CHECK"] = False
+
     edited_df = st.data_editor(
         df_para_editar,
         column_config={
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
-            "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f")
+            "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
+            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
         },
-        disabled=[c for c in df_nube.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO"]],
+        # Se añade COMI_CHECK a la lista de columnas editables
+        disabled=[c for c in df_nube.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK"]],
         use_container_width=True, key="ed_v25"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-        # Lógica de Auto-Pago: Antes de subir, revisamos fila por fila
-        # Si alguien puso 'Pagado', igualamos el monto recibido a la venta
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
         
-        # Guardar en orden original de ID (sort_index)
         conn.update(data=edited_df.sort_index())
         st.success("¡Información actualizada!")
         st.cache_data.clear()
