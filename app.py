@@ -13,13 +13,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
     for i in range(3):
-        try: 
-            df = conn.read(ttl=0)
-            # Limpieza de nombres de columnas por si acaso hay espacios
-            df.columns = [str(c).strip() for c in df.columns]
-            return df
-        except Exception: 
-            time.sleep(1)
+        try: return conn.read(ttl=0)
+        except Exception: time.sleep(1)
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -53,7 +48,7 @@ with st.sidebar:
     
     def limpiar_num(t):
         if not t: return 0.0
-        try: return float(str(t).replace(',', '').replace('$', ''))
+        try: return float(t.replace(',', '').replace('$', ''))
         except: return 0.0
 
     usd_bruto = limpiar_num(usd_bruto_txt)
@@ -71,6 +66,26 @@ with st.sidebar:
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
+    st.divider()
+    st.header("🗑️ Borrar Registro")
+    if not df_nube.empty:
+        opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
+        seleccion = st.selectbox("ID a borrar:", opciones_del)
+        if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
+            st.session_state.confirm_delete = True
+        
+        if st.session_state.get('confirm_delete', False):
+            st.error("¿Confirmas?")
+            c1, c2 = st.columns(2)
+            if c1.button("SÍ", type="primary"):
+                conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
+                st.session_state.confirm_delete = False
+                st.cache_data.clear()
+                st.rerun()
+            if c2.button("NO"):
+                st.session_state.confirm_delete = False
+                st.rerun()
+
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
     nuevo = pd.DataFrame([{
@@ -81,44 +96,39 @@ if btn_guardar and nombre and usd_bruto > 0:
         "VENTA_MXN": venta_mxn, "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_actual,
         "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "COMI_CHECK": False, "FECHA": datetime.now().strftime("%d/%m/%Y")
     }])
-    # Reordenamos columnas para que coincidan con tu Sheet
-    columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
-    
-    # Solo concatenamos si las columnas existen o las creamos
-    for col in columnas_orden:
-        if col not in df_nube.columns: df_nube[col] = None
-
-    conn.update(data=pd.concat([df_nube, nuevo[columnas_orden]], ignore_index=True))
+    columnas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
+    conn.update(data=pd.concat([df_nube, nuevo[columnas]], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
 # --- HISTORIAL Y COBRANZA ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
+    # Creamos una copia para editar y ordenamos
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     
-    # Forzar que COMI_CHECK sea booleano para el editor
+    # SALVAVAIDAS: Si la columna no existe en el Sheet, la creamos aquí para que no de error el editor
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
-    else:
-        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
 
     edited_df = st.data_editor(
         df_para_editar,
         column_config={
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
-            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
+            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA", help="¿Ya pagaste la comisión de esta venta?")
         },
         disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK"]],
         use_container_width=True, key="ed_v25"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
+        # Lógica de Auto-Pago
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
         
+        # Guardar todo de nuevo a la nube
         conn.update(data=edited_df.sort_index())
         st.success("¡Información actualizada!")
         st.cache_data.clear()
@@ -128,19 +138,18 @@ if not df_nube.empty:
 st.divider()
 st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
-    # Aseguramos que existan las columnas para el reporte
-    venta_col = "VENTA_MXN"
-    comi_col = "COMISION_PAGADA_MXN"
-    ganancia_col = "GANANCIA_MXN"
-
     semanas = df_nube["RANGO_SEMANA"].unique().tolist()
-    sem_sel = st.selectbox("Semana:", semanas)
+    c_sel, c_b1, c_b2 = st.columns([2, 1, 1])
+    with c_sel: sem_sel = st.selectbox("Semana:", semanas, label_visibility="collapsed")
+    with c_b1: btn_sel = st.button("Consultar Selección", use_container_width=True)
+    with c_b2: btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
 
     def stats(df_f, tit):
         st.markdown(f"#### {tit}")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Venta Total", f"${pd.to_numeric(df_f[venta_col]).sum():,.2f}")
-        m2.metric("Comisiones", f"${pd.to_numeric(df_f[comi_col]).sum():,.2f}")
-        m3.metric("Ganancia", f"${pd.to_numeric(df_f[ganancia_col]).sum():,.2f}")
+        m1.metric("Venta Total", f"${df_f['VENTA_MXN'].sum():,.2f}")
+        m2.metric("Comisiones", f"${df_f['COMISION_PAGADA_MXN'].sum():,.2f}")
+        m3.metric("Ganancia", f"${df_f['GANANCIA_MXN'].sum():,.2f}")
 
-    stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    if btn_sel: stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    if btn_act: stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
