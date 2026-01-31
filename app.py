@@ -13,8 +13,12 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
     for i in range(3):
-        try: return conn.read(ttl=0)
-        except Exception: time.sleep(1)
+        try: 
+            df = conn.read(ttl=0)
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
+        except Exception: 
+            time.sleep(1)
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -33,7 +37,7 @@ inicio_semana = hoy - timedelta(days=hoy.weekday())
 fin_semana = inicio_semana + timedelta(days=6)
 rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%d/%m/%y')}"
 
-# --- SIDEBAR: REGISTRO ---
+# --- SIDEBAR: REGISTRO Y BORRADO ---
 with st.sidebar:
     st.header(f"📝 Registro (ID: {proximo_id})")
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
@@ -48,7 +52,7 @@ with st.sidebar:
     
     def limpiar_num(t):
         if not t: return 0.0
-        try: return float(t.replace(',', '').replace('$', ''))
+        try: return float(str(t).replace(',', '').replace('$', ''))
         except: return 0.0
 
     usd_bruto = limpiar_num(usd_bruto_txt)
@@ -96,39 +100,36 @@ if btn_guardar and nombre and usd_bruto > 0:
         "VENTA_MXN": venta_mxn, "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_actual,
         "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "COMI_CHECK": False, "FECHA": datetime.now().strftime("%d/%m/%Y")
     }])
-    columnas = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
-    conn.update(data=pd.concat([df_nube, nuevo[columnas]], ignore_index=True))
+    columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
+    conn.update(data=pd.concat([df_nube, nuevo[columnas_orden]], ignore_index=True))
     st.cache_data.clear()
     st.rerun()
 
 # --- HISTORIAL Y COBRANZA ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
-    # Creamos una copia para editar y ordenamos
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     
-    # SALVAVAIDAS: Si la columna no existe en el Sheet, la creamos aquí para que no de error el editor
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
+    else:
+        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
 
     edited_df = st.data_editor(
         df_para_editar,
         column_config={
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
-            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA", help="¿Ya pagaste la comisión de esta venta?")
+            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
         },
         disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK"]],
         use_container_width=True, key="ed_v25"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-        # Lógica de Auto-Pago
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
-        
-        # Guardar todo de nuevo a la nube
         conn.update(data=edited_df.sort_index())
         st.success("¡Información actualizada!")
         st.cache_data.clear()
@@ -140,16 +141,21 @@ st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
     semanas = df_nube["RANGO_SEMANA"].unique().tolist()
     c_sel, c_b1, c_b2 = st.columns([2, 1, 1])
-    with c_sel: sem_sel = st.selectbox("Semana:", semanas, label_visibility="collapsed")
-    with c_b1: btn_sel = st.button("Consultar Selección", use_container_width=True)
-    with c_b2: btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
+    with c_sel: 
+        sem_sel = st.selectbox("Semana:", semanas, label_visibility="collapsed")
+    with c_b1: 
+        btn_sel = st.button("Consultar Selección", use_container_width=True)
+    with c_b2: 
+        btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
 
     def stats(df_f, tit):
         st.markdown(f"#### {tit}")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Venta Total", f"${df_f['VENTA_MXN'].sum():,.2f}")
-        m2.metric("Comisiones", f"${df_f['COMISION_PAGADA_MXN'].sum():,.2f}")
-        m3.metric("Ganancia", f"${df_f['GANANCIA_MXN'].sum():,.2f}")
+        m1.metric("Venta Total", f"${pd.to_numeric(df_f['VENTA_MXN']).sum():,.2f}")
+        m2.metric("Comisiones", f"${pd.to_numeric(df_f['COMISION_PAGADA_MXN']).sum():,.2f}")
+        m3.metric("Ganancia", f"${pd.to_numeric(df_f['GANANCIA_MXN']).sum():,.2f}")
 
-    if btn_sel: stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
-    if btn_act: stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
+    if btn_sel: 
+        stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    if btn_act: 
+        stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
