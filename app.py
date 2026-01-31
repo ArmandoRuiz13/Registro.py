@@ -84,7 +84,7 @@ with st.sidebar:
                 st.rerun()
             if c2.button("NO"):
                 st.session_state.confirm_delete = False
-                st.rerun()
+                st.rerun() 
 
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
