@@ -39,13 +39,31 @@ for col in ["Precio MXN", "Cantidad", "Vendidos"]:
 with st.sidebar:
     st.header("🆕 Nuevo Producto")
     
+    # 1. Selectores dinámicos FUERA del form para que la interfaz reaccione al instante
+    tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
+    f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
+    
+    # SOLO se muestra si elige CUSTOM
+    f_tienda_custom = ""
+    if f_tienda_sel == "CUSTOM":
+        f_tienda_custom = st.text_input("Escribe el nombre de la tienda:")
+
+    f_tienda_final = f_tienda_custom if f_tienda_sel == "CUSTOM" else f_tienda_sel
+
+    # Selector de Talla
+    opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
+    f_talla_sel = st.selectbox("Talla", opciones_talla)
+    
+    # SOLO se muestra si elige Numérica/Otra
+    f_talla_extra = ""
+    if f_talla_sel == "Numérica/Otra":
+        f_talla_extra = st.text_input("Ingresa el número o talla especial:")
+
+    f_talla_final = f_talla_extra if f_talla_sel == "Numérica/Otra" else f_talla_sel
+
+    # 2. Resto de los campos dentro del Formulario
     with st.form("registro_inv", clear_on_submit=True):
         f_nombre = st.text_input("Nombre del Producto")
-        
-        tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
-        f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
-        f_tienda_custom = st.text_input("Tienda custom (si aplica):")
-        f_tienda_final = f_tienda_custom if f_tienda_sel == "CUSTOM" else f_tienda_sel
         
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -53,34 +71,30 @@ with st.sidebar:
             f_color = st.text_input("Color")
         with col_f2:
             f_cantidad_txt = st.text_input("Cantidad Total", placeholder="10")
-            
-            # TALLA colocada después de Cantidad
-            opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
-            f_talla_sel = st.selectbox("Talla", opciones_talla)
-            
-        # Campo extra que solo se usa si elige Numérica
-        f_talla_extra = st.text_input("Escribe la talla (si elegiste Numérica):")
-            
-        f_vendidos_txt = st.text_input("Ventas iniciales", value="0")
+            f_vendidos_txt = st.text_input("Ventas iniciales", value="0")
         
         def limpiar_num(val):
-            try: return float(val) if val != "" else 0.0
+            try: return float(str(val).replace(',', '')) if val != "" else 0.0
             except: return 0.0
 
         if st.form_submit_button("AÑADIR REGISTRO", use_container_width=True):
-            # Lógica para decidir qué talla guardar
-            talla_final = f_talla_extra if f_talla_sel == "Numérica/Otra" else f_talla_sel
-            
-            if f_nombre and talla_final:
+            if f_nombre and f_talla_final and f_tienda_final:
                 nuevo = pd.DataFrame([{
-                    "Producto": f_nombre, "Tienda": f_tienda_final, "Precio MXN": limpiar_num(f_precio_txt),
-                    "Color": f_color, "Talla": talla_final, "Cantidad": limpiar_num(f_cantidad_txt), 
+                    "Producto": f_nombre, 
+                    "Tienda": f_tienda_final, 
+                    "Precio MXN": limpiar_num(f_precio_txt),
+                    "Color": f_color, 
+                    "Talla": f_talla_final, 
+                    "Cantidad": limpiar_num(f_cantidad_txt), 
                     "Vendidos": limpiar_num(f_vendidos_txt)
                 }])
                 df_inv = pd.concat([df_inv, nuevo], ignore_index=True)
                 conn.update(worksheet="Inventario", data=df_inv)
                 st.cache_data.clear()
+                st.success(f"¡{f_nombre} guardado!")
                 st.rerun()
+            else:
+                st.warning("Asegúrate de poner Nombre, Tienda y Talla")
 
     # --- SECCIÓN DE BORRADO ---
     st.divider()
@@ -103,7 +117,7 @@ with st.sidebar:
                 st.session_state.confirm_borrar = False
                 st.rerun()
 
-# --- PROCESAMIENTO ---
+# --- PROCESAMIENTO Y ESTADÍSTICAS ---
 df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
 df_inv["Total Vendido $"] = df_inv["Vendidos"] * df_inv["Precio MXN"]
 df_inv["Valor en Stock $"] = df_inv["Disponible"] * df_inv["Precio MXN"]
@@ -127,17 +141,13 @@ if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
     st.cache_data.clear()
     st.rerun()
 
-# --- ESTADÍSTICAS ---
+# --- ESTADÍSTICAS COMPLETAS ---
 st.divider()
 st.subheader("📈 Análisis de Negocio")
 if not edited_inv.empty:
     col1, col2, col3, col4 = st.columns(4)
-    
-    total_piezas = int(edited_inv["Cantidad"].sum())
-    total_vendidas = int(edited_inv["Vendidos"].sum())
-    
-    col1.metric("Stock Total", f"{total_piezas} und")
-    col2.metric("Ventas Realizadas", f"{total_vendidas} und")
+    col1.metric("Stock Total", f"{int(edited_inv['Cantidad'].sum())} und")
+    col2.metric("Ventas Realizadas", f"{int(edited_inv['Vendidos'].sum())} und")
     col3.metric("Capital Invertido", f"${(edited_inv['Cantidad'] * edited_inv['Precio MXN']).sum():,.2f}")
     col4.metric("Valor Almacén", f"${edited_inv['Valor en Stock $'].sum():,.2f}")
 
