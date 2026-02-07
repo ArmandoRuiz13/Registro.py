@@ -46,41 +46,60 @@ for col in columnas_num:
     df_inv[col] = pd.to_numeric(df_inv[col], errors='coerce').fillna(0)
 
 # --- FORMULARIO DE REGISTRO (SIDEBAR) ---
+# --- DENTRO DEL FORMULARIO EN EL SIDEBAR ---
 with st.sidebar:
     st.header("🆕 Nuevo Producto")
     with st.form("registro_inv", clear_on_submit=True):
         f_nombre = st.text_input("Nombre del Producto")
         
+        # Tiendas
         tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
         f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
         f_tienda_custom = st.text_input("Escribe la tienda custom:") if f_tienda_sel == "CUSTOM" else ""
-        
         f_tienda_final = f_tienda_custom if f_tienda_sel == "CUSTOM" else f_tienda_sel
         
-        c1, c2 = st.columns(2)
-        with c1:
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
             f_precio = st.number_input("Precio MXN", min_value=0.0, step=50.0)
-            f_talla = st.selectbox("Talla", ["XS", "S", "M", "L", "XL", "28", "30", "32", "34", "Unique"])
-        with c2:
+            
+            # --- SECCIÓN DE TALLAS MEJORADA ---
+            opciones_talla = [
+                "XXS", "XS", "S", "M", "L", "XL", "XXL", 
+                "Talla Numérica", "Otra"
+            ]
+            f_talla_sel = st.selectbox("Talla", opciones_talla)
+            
+            # Si elige numérica u otra, aparece el campo para escribir
+            if f_talla_sel in ["Talla Numérica", "Otra"]:
+                f_talla_final = st.text_input("Ingresa la talla:")
+            else:
+                f_talla_final = f_talla_sel
+
+        with col_f2:
             f_cantidad = st.number_input("Cantidad", min_value=1, step=1)
             f_color = st.text_input("Color")
             
         f_vendidos = st.number_input("Ventas iniciales", min_value=0, step=1)
         
         if st.form_submit_button("AÑADIR REGISTRO", use_container_width=True):
-            if f_nombre:
+            if f_nombre and f_talla_final:
                 nuevo = pd.DataFrame([{
-                    "Producto": f_nombre, "Tienda": f_tienda_final, "Precio MXN": f_precio,
-                    "Color": f_color, "Talla": f_talla, "Cantidad": f_cantidad, "Vendidos": f_vendidos
+                    "Producto": f_nombre, 
+                    "Tienda": f_tienda_final, 
+                    "Precio MXN": f_precio,
+                    "Color": f_color, 
+                    "Talla": f_talla_final, # Aquí se guarda la talla final (fija o escrita)
+                    "Cantidad": f_cantidad, 
+                    "Vendidos": f_vendidos
                 }])
+                # ... (resto del código de guardado igual que antes)
                 df_inv = pd.concat([df_inv, nuevo], ignore_index=True)
                 conn.update(worksheet="Inventario", data=df_inv)
                 st.cache_data.clear()
-                st.success("¡Agregado!")
+                st.success(f"¡{f_nombre} (Talla {f_talla_final}) agregado!")
                 st.rerun()
             else:
-                st.warning("El nombre es obligatorio")
-
+                st.warning("El nombre y la talla son obligatorios")
 # --- CÁLCULOS AUTOMÁTICOS ---
 df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
 df_inv["Total Vendido"] = df_inv["Vendidos"] * df_inv["Precio MXN"]
