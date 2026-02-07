@@ -5,21 +5,6 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Inventario Pro", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS (CORREGIDO) ---
-st.markdown("""
-    <style>
-    [data-testid="stMetricValue"] {
-        font-size: 1.8rem;
-    }
-    .stMetric {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # BOTÓN PARA VOLVER
 if st.sidebar.button("⬅️ VOLVER A VENTAS"):
     st.switch_page("app.py") 
@@ -68,7 +53,7 @@ with st.sidebar:
     if f_talla_sel == "Numérica/Otra":
         f_talla_final = st.text_input("Escribe la talla")
 
-    # clear_on_submit=False para que la info no se borre al guardar
+    # clear_on_submit=False permite que los datos se queden escritos para el siguiente registro
     with st.form("registro_inv", clear_on_submit=False):
         f_nombre = st.text_input("Nombre del Producto")
         
@@ -102,8 +87,7 @@ with st.sidebar:
                 df_inv = pd.concat([df_inv, nuevo], ignore_index=True)
                 conn.update(worksheet="Inventario", data=df_inv)
                 st.cache_data.clear()
-                st.success("¡Guardado exitosamente!")
-                # Nota: Quitamos st.rerun() para que el texto se quede en los campos
+                st.success("¡Guardado!")
             else:
                 st.error("Faltan datos (Nombre, Tienda o Talla)")
 
@@ -149,11 +133,11 @@ if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
     st.cache_data.clear()
     st.rerun()
 
-# --- ESTADÍSTICAS MEJORADAS ---
+# --- ESTADÍSTICAS ---
 st.divider()
 st.subheader("📈 Resumen de Stock y Ventas")
 if not edited_inv.empty:
-    # Métricas Generales
+    # Métricas Generales (Sin fondo personalizado)
     m1, m2, m3, m4 = st.columns(4)
     total_disponible = int(edited_inv['Disponible'].sum())
     
@@ -162,15 +146,16 @@ if not edited_inv.empty:
     m3.metric("💵 Ganancia Real", f"${edited_inv['Ganancia $'].sum():,.2f}")
     m4.metric("🏗️ Valor en Bodega", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
 
-    # Separación por Tienda
+    st.write("---")
+    
+    # Separación por Tienda en formato tabla limpia
     st.write("### 🏬 Stock disponible por Tienda")
-    col_t1, col_t2 = st.columns([1, 2])
+    resumen_tienda = edited_inv.groupby("Tienda")["Disponible"].sum().reset_index()
+    resumen_tienda.columns = ["Tienda", "Stock Actual"]
     
-    with col_t1:
-        resumen_tienda = edited_inv.groupby("Tienda")["Disponible"].sum().reset_index()
-        resumen_tienda.columns = ["Tienda", "Stock Actual"]
-        st.dataframe(resumen_tienda.sort_values(by="Stock Actual", ascending=False), hide_index=True, use_container_width=True)
-    
-    with col_t2:
-        if not resumen_tienda.empty:
-            st.bar_chart(resumen_tienda.set_index("Tienda"))
+    # Mostramos la tabla de tiendas ocupando un ancho razonable
+    st.dataframe(
+        resumen_tienda.sort_values(by="Stock Actual", ascending=False), 
+        hide_index=True, 
+        width=500
+    )
