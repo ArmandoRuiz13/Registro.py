@@ -10,7 +10,7 @@ st.set_page_config(page_title="Gestor Pro v25", layout="wide")
 # --- BOTÓN DE NAVEGACIÓN ---
 with st.sidebar:
     if st.button("📦 IR A INVENTARIO", use_container_width=True):
-        st.switch_page("pages/Inventario.py") # Prueba también con "Inventario.py" a secas si esto falla
+        st.switch_page("Inventario.py") # Prueba también con "Inventario.py" a secas si esto falla
     st.divider()
 st.title("🚀 Control de Ventas")
 
