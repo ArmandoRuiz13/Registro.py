@@ -39,28 +39,27 @@ for col in ["Precio MXN", "Cantidad", "Vendidos"]:
 with st.sidebar:
     st.header("🆕 Nuevo Producto")
     
-    # Selector de Talla FUERA del form para que sea dinámico y abra el campo al instante
-    opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Talla Numérica", "Otra"]
-    f_talla_sel = st.selectbox("Categoría de Talla", opciones_talla)
-    f_talla_extra = ""
-    if f_talla_sel in ["Talla Numérica", "Otra"]:
-        f_talla_extra = st.text_input("Escribe la talla exacta:")
-
     with st.form("registro_inv", clear_on_submit=True):
         f_nombre = st.text_input("Nombre del Producto")
         
         tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
         f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
         f_tienda_custom = st.text_input("Tienda custom (si aplica):")
-        
         f_tienda_final = f_tienda_custom if f_tienda_sel == "CUSTOM" else f_tienda_sel
         
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             f_precio_txt = st.text_input("Precio MXN", placeholder="850")
+            f_color = st.text_input("Color")
         with col_f2:
             f_cantidad_txt = st.text_input("Cantidad Total", placeholder="10")
-            f_color = st.text_input("Color")
+            
+            # TALLA colocada después de Cantidad
+            opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
+            f_talla_sel = st.selectbox("Talla", opciones_talla)
+            
+        # Campo extra que solo se usa si elige Numérica
+        f_talla_extra = st.text_input("Escribe la talla (si elegiste Numérica):")
             
         f_vendidos_txt = st.text_input("Ventas iniciales", value="0")
         
@@ -69,7 +68,9 @@ with st.sidebar:
             except: return 0.0
 
         if st.form_submit_button("AÑADIR REGISTRO", use_container_width=True):
-            talla_final = f_talla_extra if f_talla_sel in ["Talla Numérica", "Otra"] else f_talla_sel
+            # Lógica para decidir qué talla guardar
+            talla_final = f_talla_extra if f_talla_sel == "Numérica/Otra" else f_talla_sel
+            
             if f_nombre and talla_final:
                 nuevo = pd.DataFrame([{
                     "Producto": f_nombre, "Tienda": f_tienda_final, "Precio MXN": limpiar_num(f_precio_txt),
@@ -90,9 +91,9 @@ with st.sidebar:
             st.session_state.confirm_borrar = True
         
         if st.session_state.get('confirm_borrar', False):
-            st.warning("¿Estás seguro?")
+            st.warning("¿Confirmas eliminar?")
             cb1, cb2 = st.columns(2)
-            if cb1.button("SÍ, BORRAR", type="primary"):
+            if cb1.button("SÍ", type="primary"):
                 df_inv = df_inv.drop(prod_borrar)
                 conn.update(worksheet="Inventario", data=df_inv)
                 st.session_state.confirm_borrar = False
@@ -126,7 +127,7 @@ if st.button("💾 GUARDAR CAMBIOS DE LA TABLA"):
     st.cache_data.clear()
     st.rerun()
 
-# --- ESTADÍSTICAS COMPLETAS ---
+# --- ESTADÍSTICAS ---
 st.divider()
 st.subheader("📈 Análisis de Negocio")
 if not edited_inv.empty:
@@ -134,12 +135,11 @@ if not edited_inv.empty:
     
     total_piezas = int(edited_inv["Cantidad"].sum())
     total_vendidas = int(edited_inv["Vendidos"].sum())
-    porcentaje_venta = (total_vendidas / total_piezas * 100) if total_piezas > 0 else 0
     
-    col1.metric("Stock Total (Piezas)", f"{total_piezas} und")
-    col2.metric("Ventas Realizadas", f"{total_vendidas} und", f"{porcentaje_venta:.1f}% del total")
+    col1.metric("Stock Total", f"{total_piezas} und")
+    col2.metric("Ventas Realizadas", f"{total_vendidas} und")
     col3.metric("Capital Invertido", f"${(edited_inv['Cantidad'] * edited_inv['Precio MXN']).sum():,.2f}")
-    col4.metric("Valor Actual Almacén", f"${edited_inv['Valor en Stock $'].sum():,.2f}")
+    col4.metric("Valor Almacén", f"${edited_inv['Valor en Stock $'].sum():,.2f}")
 
     c_izq, c_der = st.columns(2)
     with c_izq:
@@ -148,7 +148,3 @@ if not edited_inv.empty:
     with c_der:
         st.write("### 💰 Ingresos por Tienda")
         st.bar_chart(edited_inv.groupby("Tienda")["Total Vendido $"].sum())
-        
-    st.write("### 📊 Top Productos (Más vendidos)")
-    top_prods = edited_inv.nlargest(5, 'Vendidos')[['Producto', 'Talla', 'Vendidos', 'Total Vendido $']]
-    st.table(top_prods)
