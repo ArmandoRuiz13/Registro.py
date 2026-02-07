@@ -7,6 +7,12 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Gestor Pro v25", layout="wide")
 
+# --- BOTÓN DE NAVEGACIÓN ---
+with st.sidebar:
+    if st.button("📦 IR A INVENTARIO", use_container_width=True):
+        st.switch_page("pages/Inventario.py")
+    st.divider()
+
 st.title("🚀 Control de Ventas")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
