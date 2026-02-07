@@ -13,6 +13,8 @@ with st.sidebar:
         st.switch_page("Inventario.py") # Prueba también con "Inventario.py" a secas si esto falla
     st.divider()
 st.title("🚀 Control de Ventas")
+if st.button("📦 IR A INVENTARIO", use_container_width=True):
+    st.switch_page("pages/Inventario.py") # Prueba también con "Inventario.py" a secas si esto falla
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
