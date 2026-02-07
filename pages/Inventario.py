@@ -5,6 +5,13 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Inventario Pro", layout="wide")
 
+# --- ESTILOS PERSONALIZADOS ---
+st.markdown("""
+    <style>
+    .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; }
+    </style>
+    """, unsafe_index=True)
+
 # BOTÓN PARA VOLVER
 if st.sidebar.button("⬅️ VOLVER A VENTAS"):
     st.switch_page("app.py") 
@@ -39,11 +46,9 @@ for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
 with st.sidebar:
     st.header("🆕 Nuevo Producto")
     
-    # Selectores fuera del form para que la reactividad (ocultar/mostrar) sea instantánea
     tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
     
-    # LOGICA OCULTAR TIENDA
     f_tienda_final = f_tienda_sel
     if f_tienda_sel == "CUSTOM":
         f_tienda_final = st.text_input("Nombre de Tienda Custom")
@@ -51,13 +56,12 @@ with st.sidebar:
     opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
     f_talla_sel = st.selectbox("Talla", opciones_talla)
     
-    # LOGICA OCULTAR TALLA
     f_talla_final = f_talla_sel
     if f_talla_sel == "Numérica/Otra":
         f_talla_final = st.text_input("Escribe la talla")
 
-    # Formulario para el resto de datos (esto quita el "Press Enter to Submit")
-    with st.form("registro_inv", clear_on_submit=True):
+    # clear_on_submit=False permite que los datos se queden escritos para el siguiente registro
+    with st.form("registro_inv", clear_on_submit=False):
         f_nombre = st.text_input("Nombre del Producto")
         
         col_f1, col_f2 = st.columns(2)
@@ -90,8 +94,7 @@ with st.sidebar:
                 df_inv = pd.concat([df_inv, nuevo], ignore_index=True)
                 conn.update(worksheet="Inventario", data=df_inv)
                 st.cache_data.clear()
-                st.success("Guardado!")
-                st.rerun()
+                st.success("¡Guardado! (Los datos siguen aquí para el siguiente)")
             else:
                 st.error("Faltan datos (Nombre, Tienda o Talla)")
 
@@ -126,7 +129,8 @@ edited_inv = st.data_editor(
         "Venta Total $": st.column_config.NumberColumn(format="$%.2f", disabled=True),
         "Ganancia $": st.column_config.NumberColumn(format="$%.2f", disabled=True)
     },
-    use_container_width=True
+    use_container_width=True,
+    hide_index=True
 )
 
 if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
@@ -136,12 +140,30 @@ if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
     st.cache_data.clear()
     st.rerun()
 
-# --- ESTADÍSTICAS ---
+# --- ESTADÍSTICAS MEJORADAS ---
 st.divider()
-st.subheader("📈 Estadísticas")
+st.subheader("📈 Resumen de Stock y Ventas")
 if not edited_inv.empty:
+    # Métricas Generales
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Stock Piezas", f"{int(edited_inv['Disponible'].sum())}")
-    m2.metric("Ventas Totales", f"${edited_inv['Venta Total $'].sum():,.2f}")
-    m3.metric("Ganancia Real", f"${edited_inv['Ganancia $'].sum():,.2f}")
-    m4.metric("Valor Invertido", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
+    total_disponible = int(edited_inv['Disponible'].sum())
+    
+    m1.metric("📦 Stock Restante", f"{total_disponible} pzs")
+    m2.metric("💰 Ventas Totales", f"${edited_inv['Venta Total $'].sum():,.2f}")
+    m3.metric("💵 Ganancia Real", f"${edited_inv['Ganancia $'].sum():,.2f}")
+    m4.metric("🏗️ Valor en Bodega", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
+
+    # Separación por Tienda
+    st.write("### 🏬 Stock disponible por Tienda")
+    col_t1, col_t2 = st.columns([1, 2])
+    
+    with col_t1:
+        # Agrupación por tienda
+        resumen_tienda = edited_inv.groupby("Tienda")["Disponible"].sum().reset_index()
+        resumen_tienda.columns = ["Tienda", "Stock Actual"]
+        st.dataframe(resumen_tienda.sort_values(by="Stock Actual", ascending=False), hide_index=True, use_container_width=True)
+    
+    with col_t2:
+        # Mini gráfico rápido si hay datos
+        if not resumen_tienda.empty:
+            st.bar_chart(resumen_tienda.set_index("Tienda"))
