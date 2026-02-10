@@ -5,7 +5,8 @@ import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Gestor Pro v25", layout="wide")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Gestor Pro v25 - Ventas", layout="wide")
 
 # --- BOTÓN DE NAVEGACIÓN ---
 with st.sidebar:
@@ -15,9 +16,11 @@ with st.sidebar:
 
 st.title("🚀 Control de Ventas")
 
+# --- CONEXIÓN Y FUNCIONES ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
+    """Lee datos de GSheets con reintentos en caso de error."""
     for i in range(3):
         try: 
             df = conn.read(ttl=0)
@@ -29,6 +32,7 @@ def lectura_segura():
 
 @st.cache_data(ttl=3600)
 def obtener_tc():
+    """Obtiene tipo de cambio real o usa uno por defecto."""
     try: 
         return round(requests.get("https://open.er-api.com/v6/latest/USD").json()["rates"]["MXN"], 2)
     except: 
@@ -36,7 +40,7 @@ def obtener_tc():
 
 tc_actual = obtener_tc()
 
-# --- DATOS ACTUALES ---
+# --- CARGA DE DATOS ---
 df_nube = lectura_segura()
 proximo_id = len(df_nube)
 
@@ -49,7 +53,12 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 # --- SIDEBAR: REGISTRO Y BORRADO ---
 with st.sidebar:
     st.header(f"📝 Registro (ID: {proximo_id})")
+    
+    # --- FORMULARIO DE ENTRADA ---
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
+    
+    # NUEVO CAMPO: CLIENTE
+    cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -64,6 +73,7 @@ with st.sidebar:
         try: return float(str(t).replace(',', '').replace('$', ''))
         except: return 0.0
 
+    # --- CÁLCULOS ---
     usd_bruto = limpiar_num(usd_bruto_txt)
     tc_mercado = limpiar_num(tc_mercado_txt)
     venta_mxn = limpiar_num(venta_mxn_txt)
@@ -79,6 +89,7 @@ with st.sidebar:
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
+    # --- BORRADO ---
     st.divider()
     st.header("🗑️ Borrar Registro")
     if not df_nube.empty:
@@ -101,16 +112,43 @@ with st.sidebar:
 
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
-    nuevo = pd.DataFrame([{
+    nuevo_registro = {
         "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "PRODUCTO": nombre, "TIENDA": tienda_final, "USD_BRUTO": usd_bruto,
-        "USD_CON_8.25": usd_tax, "USD_FINAL_EQ": usd_final_eq, "TC_MERCADO": tc_mercado,
-        "COMISION_PAGADA_MXN": comi_mxn, "COSTO_TOTAL_MXN": costo_tot_mxn,
-        "VENTA_MXN": venta_mxn, "GANANCIA_MXN": ganancia_mxn, "RANGO_SEMANA": rango_actual,
-        "ESTADO_PAGO": "🔴 Debe", "MONTO_RECIBIDO": 0.0, "COMI_CHECK": False, "FECHA": datetime.now().strftime("%d/%m/%Y")
-    }])
-    columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "TIENDA", "USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
-    conn.update(data=pd.concat([df_nube, nuevo[columnas_orden]], ignore_index=True))
+        "PRODUCTO": nombre, 
+        "CLIENTE": cliente if cliente else "N/A", # Guardado del nuevo campo
+        "TIENDA": tienda_final, 
+        "USD_BRUTO": usd_bruto,
+        "USD_CON_8.25": usd_tax, 
+        "USD_FINAL_EQ": usd_final_eq, 
+        "TC_MERCADO": tc_mercado,
+        "COMISION_PAGADA_MXN": comi_mxn, 
+        "COSTO_TOTAL_MXN": costo_tot_mxn,
+        "VENTA_MXN": venta_mxn, 
+        "GANANCIA_MXN": ganancia_mxn, 
+        "RANGO_SEMANA": rango_actual,
+        "ESTADO_PAGO": "🔴 Debe", 
+        "MONTO_RECIBIDO": 0.0, 
+        "COMI_CHECK": False, 
+        "FECHA": datetime.now().strftime("%d/%m/%Y")
+    }
+    
+    nuevo_df = pd.DataFrame([nuevo_registro])
+    
+    # Asegurar orden de columnas
+    columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "CLIENTE", "TIENDA", "USD_BRUTO", 
+                      "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", 
+                      "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", 
+                      "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
+
+    # Si la nube ya tiene datos, verificar si existe la columna CLIENTE
+    if not df_nube.empty:
+        if "CLIENTE" not in df_nube.columns:
+            df_nube["CLIENTE"] = "N/A"
+        df_final = pd.concat([df_nube, nuevo_df[columnas_orden]], ignore_index=True)
+    else:
+        df_final = nuevo_df[columnas_orden]
+
+    conn.update(data=df_final)
     st.cache_data.clear()
     st.rerun()
 
@@ -119,26 +157,34 @@ st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
 
+    # Limpieza de datos booleanos para el CheckboxColumn
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
         df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
 
+    # Asegurar que CLIENTE exista para visualización
+    if "CLIENTE" not in df_para_editar.columns:
+        df_para_editar["CLIENTE"] = "N/A"
+
     edited_df = st.data_editor(
         df_para_editar,
         column_config={
+            "CLIENTE": st.column_config.TextColumn("👤 CLIENTE", help="Quién realizó la compra"),
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
             "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
         },
-        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK"]],
+        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE"]],
         use_container_width=True, key="ed_v25"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
+        # Lógica automática de pago total
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
+        
         conn.update(data=edited_df.sort_index())
         st.success("¡Información actualizada!")
         st.cache_data.clear()
