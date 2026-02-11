@@ -18,7 +18,6 @@ def subir_a_nube(archivo_imagen):
     """Envía la imagen a Cloudinary con optimización automática."""
     try:
         url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
-        # Optimizamos: quality auto y fetch_format auto ahorran mucho espacio/créditos
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
@@ -50,12 +49,15 @@ st.title("🚀 Control de Ventas (Cloudinary Edition)")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
-    """Lee datos de GSheets con reintentos."""
+    """Lee datos de GSheets forzando la limpieza de caché para evitar datos viejos."""
+    st.cache_data.clear() # Limpia caché de Streamlit
     for i in range(3):
         try: 
+            # ttl=0 obliga a leer directamente de Google Sheets cada vez
             df = conn.read(ttl=0)
-            df.columns = [str(c).strip() for c in df.columns]
-            return df
+            if df is not None:
+                df.columns = [str(c).strip() for c in df.columns]
+                return df
         except Exception: 
             time.sleep(1)
     return pd.DataFrame()
@@ -133,6 +135,7 @@ with st.sidebar:
             if c1.button("SÍ"):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
+                time.sleep(1) # Pausa para que Google procese el borrado
                 st.cache_data.clear()
                 st.rerun()
             if c2.button("NO"):
@@ -141,14 +144,17 @@ with st.sidebar:
 
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
-    with st.spinner("Procesando imagen y datos..."):
+    with st.spinner("Subiendo a Cloudinary y sincronizando Sheets..."):
         url_final_foto = ""
         if foto_archivo:
             url_final_foto = subir_a_nube(foto_archivo)
-            # Si el usuario subió foto pero falló la subida a Cloudinary, detenemos el proceso
+            # Validación de seguridad solicitada:
             if not url_final_foto:
-                st.error("❌ No se pudo subir la foto. El registro no se guardó para evitar datos incompletos.")
+                st.error("❌ Falló la subida a Cloudinary. Verifica el Upload Preset.")
                 st.stop() 
+        
+        # Leemos los datos más frescos justo antes de concatenar
+        df_fresco = lectura_segura()
         
         nuevo_registro = {
             "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -177,17 +183,20 @@ if btn_guardar and nombre and usd_bruto > 0:
                           "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", 
                           "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
 
-        if not df_nube.empty:
-            # Aseguramos que existan las columnas en el DF actual antes de concatenar
+        if not df_fresco.empty:
             for col in ["CLIENTE", "FOTO_URL"]:
-                if col not in df_nube.columns: df_nube[col] = "N/A"
-            df_final = pd.concat([df_nube, nuevo_df[columnas_orden]], ignore_index=True)
+                if col not in df_fresco.columns: df_fresco[col] = "N/A"
+            df_final = pd.concat([df_fresco, nuevo_df[columnas_orden]], ignore_index=True)
         else:
             df_final = nuevo_df[columnas_orden]
 
+        # Sincronización con Google Sheets
         conn.update(data=df_final)
+        
+        # Pausa técnica de 2 segundos para asegurar que Google Sheets guarde el cambio
+        time.sleep(2)
         st.cache_data.clear()
-        st.success("¡Guardado exitosamente!")
+        st.success("✅ ¡Guardado y sincronizado exitosamente!")
         time.sleep(1)
         st.rerun()
 
@@ -223,6 +232,7 @@ if not df_nube.empty:
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
         
         conn.update(data=edited_df.sort_index())
+        time.sleep(2) # Pausa de sincronización
         st.success("¡Base de datos actualizada!")
         st.cache_data.clear()
         st.rerun()
