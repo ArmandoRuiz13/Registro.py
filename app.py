@@ -261,4 +261,4 @@ if not df_nube.empty:
         stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
     
     if btn_act:
-        stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
+        stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual") 
