@@ -8,20 +8,22 @@ from streamlit_gsheets import GSheetsConnection
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestor Pro v25 - Cloudinary", layout="wide")
 
-# 🔑 CONFIGURACIÓN DE CLOUDINARY (Copia tus datos aquí)
+# 🔑 CONFIGURACIÓN DE CLOUDINARY
 CLOUD_NAME = "doi81tooh"
 API_KEY = "245491997239959"
 API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
 # --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
 def subir_a_nube(archivo_imagen):
-    """Envía la imagen a Cloudinary y devuelve el link seguro."""
+    """Envía la imagen a Cloudinary con optimización automática."""
     try:
         url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
-        # Usamos el preset "ml_default" que Cloudinary crea por defecto
+        # Optimizamos: quality auto y fetch_format auto ahorran mucho espacio/créditos
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
+            "quality": "auto",
+            "fetch_format": "auto"
         }
         files = {"file": archivo_imagen.getvalue()}
         res = requests.post(url, data=data, files=files)
@@ -29,7 +31,8 @@ def subir_a_nube(archivo_imagen):
         if res.status_code == 200:
             return res.json().get("secure_url")
         else:
-            st.error(f"Error de Cloudinary: {res.json().get('error', {}).get('message')}")
+            error_msg = res.json().get('error', {}).get('message')
+            st.error(f"Error de Cloudinary: {error_msg}")
             return None
     except Exception as e:
         st.error(f"Error de conexión: {e}")
@@ -138,16 +141,20 @@ with st.sidebar:
 
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
-    with st.spinner("Subiendo imagen y guardando datos..."):
+    with st.spinner("Procesando imagen y datos..."):
         url_final_foto = ""
         if foto_archivo:
             url_final_foto = subir_a_nube(foto_archivo)
+            # Si el usuario subió foto pero falló la subida a Cloudinary, detenemos el proceso
+            if not url_final_foto:
+                st.error("❌ No se pudo subir la foto. El registro no se guardó para evitar datos incompletos.")
+                st.stop() 
         
         nuevo_registro = {
             "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "PRODUCTO": nombre, 
             "CLIENTE": cliente if cliente else "N/A",
-            "FOTO_URL": url_final_foto if url_final_foto else "",
+            "FOTO_URL": url_final_foto,
             "TIENDA": tienda_final, 
             "USD_BRUTO": usd_bruto,
             "USD_CON_8.25": usd_tax, 
@@ -171,6 +178,7 @@ if btn_guardar and nombre and usd_bruto > 0:
                           "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
 
         if not df_nube.empty:
+            # Aseguramos que existan las columnas en el DF actual antes de concatenar
             for col in ["CLIENTE", "FOTO_URL"]:
                 if col not in df_nube.columns: df_nube[col] = "N/A"
             df_final = pd.concat([df_nube, nuevo_df[columnas_orden]], ignore_index=True)
