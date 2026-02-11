@@ -4,11 +4,12 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
+from io import BytesIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestor Pro v25 - Cloudinary", layout="wide")
 
-# 🔑 CONFIGURACIÓN DE CLOUDINARY (Copia tus datos aquí)
+# 🔑 CONFIGURACIÓN DE CLOUDINARY
 CLOUD_NAME = "doi81tooh"
 API_KEY = "245491997239959"
 API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
@@ -18,12 +19,17 @@ def subir_a_nube(archivo_imagen):
     """Envía la imagen a Cloudinary y devuelve el link seguro."""
     try:
         url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
-        # Usamos el preset "ml_default" que Cloudinary crea por defecto
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
         }
-        files = {"file": archivo_imagen.getvalue()}
+        # Detectar si el archivo viene de uploader o de paste
+        if hasattr(archivo_imagen, 'getvalue'):
+            img_data = archivo_imagen.getvalue()
+        else:
+            img_data = archivo_imagen.read()
+            
+        files = {"file": img_data}
         res = requests.post(url, data=data, files=files)
         
         if res.status_code == 200:
@@ -84,7 +90,15 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    foto_archivo = st.file_uploader("📷 SUBIR FOTO", type=["jpg", "png", "jpeg"])
+    # --- MODIFICACIÓN PARA PEGAR IMAGEN ---
+    st.write("📷 **IMAGEN (Subir o Pegar)**")
+    # El file_uploader de Streamlit permite pegar imágenes directamente con Ctrl+V si el foco está en el widget
+    foto_archivo = st.file_uploader("Selecciona o pega una imagen", type=["jpg", "png", "jpeg"], help="Puedes arrastrar archivos o usar Ctrl+V aquí")
+    
+    # Opción alternativa: Input de cámara para móviles que también sirve como buffer
+    if not foto_archivo:
+        foto_archivo = st.camera_input("Tomar foto (opcional)")
+
     if foto_archivo:
         st.image(foto_archivo, caption="Vista previa", use_container_width=True)
     
@@ -184,13 +198,12 @@ if btn_guardar and nombre and usd_bruto > 0:
         st.rerun()
 
 # --- HISTORIAL Y COBRANZA ---
+# (El resto del código se mantiene igual según tu solicitud)
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
-
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
-    
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
@@ -213,7 +226,6 @@ if not df_nube.empty:
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
-        
         conn.update(data=edited_df.sort_index())
         st.success("¡Base de datos actualizada!")
         st.cache_data.clear()
@@ -241,6 +253,5 @@ if not df_nube.empty:
 
     if btn_sel: 
         stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
-    
     if btn_act:
         stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual")
