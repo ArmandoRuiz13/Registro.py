@@ -24,8 +24,11 @@ def subir_a_nube(archivo_imagen):
             "api_key": API_KEY,
         }
         
-        # Leemos los bytes directamente para asegurar compatibilidad con pegado
-        img_data = archivo_imagen.read()
+        # Obtenemos los bytes sin importar el origen
+        if hasattr(archivo_imagen, 'getvalue'):
+            img_data = archivo_imagen.getvalue()
+        else:
+            img_data = archivo_imagen.read()
             
         files = {"file": img_data}
         res = requests.post(url, data=data, files=files)
@@ -88,15 +91,20 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- ÁREA DE IMAGEN MEJORADA PARA PEGADO ---
-    st.write("📷 **FOTO DEL PRODUCTO**")
-    # El label ahora es más claro. 
-    # TIP: Para que el Ctrl+V funcione, DEBES hacer clic en el botón "Browse files" 
-    # o simplemente tener el mouse sobre el recuadro antes de pegar.
-    foto_archivo = st.file_uploader("Pega aquí (Ctrl+V) o arrastra la imagen", type=["jpg", "png", "jpeg"], accept_multiple_files=False)
+    # --- NUEVA SECCIÓN: LABEL PARA PEGAR IMAGEN ---
+    st.markdown("### 🖼️ ÁREA DE IMAGEN")
+    
+    # Usamos pestañas para separar "Pegar/Arrastrar" de "Captura" si fuera necesario, 
+    # pero aquí nos enfocamos en que el Uploader actúe como tu Label de pegado directo.
+    
+    st.info("💡 Haz clic abajo y presiona **Ctrl+V** para pegar tu imagen de WhatsApp.")
+    foto_archivo = st.file_uploader("LABEL: PEGA TU IMAGEN AQUÍ", type=["jpg", "png", "jpeg"], help="Haz clic y pega (Ctrl+V)")
 
     if foto_archivo:
-        st.image(foto_archivo, caption="Imagen lista para subir", use_container_width=True)
+        st.success("✅ Imagen cargada correctamente")
+        st.image(foto_archivo, caption="Vista Previa para subir", use_container_width=True)
+    
+    st.divider()
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -126,7 +134,7 @@ with st.sidebar:
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
-    # --- BORRADO ---
+    # --- BORRADO (Sin cambios) ---
     st.divider()
     if not df_nube.empty:
         opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
@@ -151,8 +159,6 @@ if btn_guardar and nombre and usd_bruto > 0:
     with st.spinner("Subiendo imagen y guardando datos..."):
         url_final_foto = ""
         if foto_archivo:
-            # Aseguramos que el puntero esté al inicio antes de subir
-            foto_archivo.seek(0)
             url_final_foto = subir_a_nube(foto_archivo)
         
         nuevo_registro = {
@@ -195,18 +201,16 @@ if btn_guardar and nombre and usd_bruto > 0:
         time.sleep(1)
         st.rerun()
 
-# --- HISTORIAL Y COBRANZA ---
+# --- HISTORIAL Y COBRANZA (Sin cambios) ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
-    
-    # Asegurar que COMI_CHECK sea booleano
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
-        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].astype(bool)
+        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
 
     edited_df = st.data_editor(
         df_para_editar,
@@ -230,7 +234,7 @@ if not df_nube.empty:
         st.cache_data.clear()
         st.rerun()
 
-# --- REPORTES ---
+# --- REPORTES (Sin cambios) ---
 st.divider()
 st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
