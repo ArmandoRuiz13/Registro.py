@@ -23,6 +23,7 @@ def subir_a_nube(archivo_imagen):
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
         }
+        
         # Detectar si el archivo viene de uploader o de paste
         if hasattr(archivo_imagen, 'getvalue'):
             img_data = archivo_imagen.getvalue()
@@ -90,17 +91,13 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- MODIFICACIÓN PARA PEGAR IMAGEN ---
-    st.write("📷 **IMAGEN (Subir o Pegar)**")
-    # El file_uploader de Streamlit permite pegar imágenes directamente con Ctrl+V si el foco está en el widget
-    foto_archivo = st.file_uploader("Selecciona o pega una imagen", type=["jpg", "png", "jpeg"], help="Puedes arrastrar archivos o usar Ctrl+V aquí")
-    
-    # Opción alternativa: Input de cámara para móviles que también sirve como buffer
-    if not foto_archivo:
-        foto_archivo = st.camera_input("Tomar foto (opcional)")
+    # --- ÁREA PARA PEGAR IMAGEN ---
+    st.write("📷 **FOTO DEL PRODUCTO**")
+    # Nota: El uploader acepta Ctrl+V si haces clic en él primero.
+    foto_archivo = st.file_uploader("Haz clic aquí y presiona Ctrl+V para pegar", type=["jpg", "png", "jpeg"])
 
     if foto_archivo:
-        st.image(foto_archivo, caption="Vista previa", use_container_width=True)
+        st.image(foto_archivo, caption="Vista previa de la imagen", use_container_width=True)
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -198,7 +195,6 @@ if btn_guardar and nombre and usd_bruto > 0:
         st.rerun()
 
 # --- HISTORIAL Y COBRANZA ---
-# (El resto del código se mantiene igual según tu solicitud)
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
