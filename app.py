@@ -15,23 +15,23 @@ API_KEY = "245491997239959"
 API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
 # --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
-def subir_a_nube(archivo_imagen):
-    """Envía la imagen a Cloudinary y devuelve el link seguro."""
+def subir_a_nube(archivo_o_url):
+    """Envía la imagen a Cloudinary (ya sea archivo o URL) y devuelve el link seguro."""
     try:
-        url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
+        url_api = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
         }
         
-        # Obtenemos los bytes sin importar el origen
-        if hasattr(archivo_imagen, 'getvalue'):
-            img_data = archivo_imagen.getvalue()
+        # Si es una URL de texto
+        if isinstance(archivo_o_url, str):
+            data["file"] = archivo_o_url
+            res = requests.post(url_api, data=data)
         else:
-            img_data = archivo_imagen.read()
-            
-        files = {"file": img_data}
-        res = requests.post(url, data=data, files=files)
+            # Si es un archivo subido/pegado
+            files = {"file": archivo_o_url.getvalue()}
+            res = requests.post(url_api, data=data, files=files)
         
         if res.status_code == 200:
             return res.json().get("secure_url")
@@ -91,18 +91,23 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- NUEVA SECCIÓN: LABEL PARA PEGAR IMAGEN ---
-    st.markdown("### 🖼️ ÁREA DE IMAGEN")
+    # --- SECCIÓN DE IMAGEN (PEGADO O SUBIDA) ---
+    st.write("📷 **IMAGEN DEL PRODUCTO**")
     
-    # Usamos pestañas para separar "Pegar/Arrastrar" de "Captura" si fuera necesario, 
-    # pero aquí nos enfocamos en que el Uploader actúe como tu Label de pegado directo.
+    # Opción 1: Campo de texto para pegar URL directo
+    url_pegada = st.text_input("PEGAR URL DE IMAGEN AQUÍ", placeholder="https://ejemplo.com/foto.jpg")
     
-    st.info("💡 Haz clic abajo y presiona **Ctrl+V** para pegar tu imagen de WhatsApp.")
-    foto_archivo = st.file_uploader("LABEL: PEGA TU IMAGEN AQUÍ", type=["jpg", "png", "jpeg"], help="Haz clic y pega (Ctrl+V)")
+    # Opción 2: El uploader tradicional (que también acepta Ctrl+V de archivos)
+    foto_archivo = st.file_uploader("O PEGA/ARRASTRA ARCHIVO AQUÍ", type=["jpg", "png", "jpeg"])
 
+    # Lógica de visualización: Prioriza el archivo sobre la URL
+    imagen_final = None
     if foto_archivo:
-        st.success("✅ Imagen cargada correctamente")
-        st.image(foto_archivo, caption="Vista Previa para subir", use_container_width=True)
+        imagen_final = foto_archivo
+        st.image(foto_archivo, caption="Vista previa (Archivo)", use_container_width=True)
+    elif url_pegada:
+        imagen_final = url_pegada
+        st.image(url_pegada, caption="Vista previa (URL)", use_container_width=True)
     
     st.divider()
     
@@ -134,7 +139,7 @@ with st.sidebar:
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
-    # --- BORRADO (Sin cambios) ---
+    # --- BORRADO ---
     st.divider()
     if not df_nube.empty:
         opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
@@ -158,8 +163,8 @@ with st.sidebar:
 if btn_guardar and nombre and usd_bruto > 0:
     with st.spinner("Subiendo imagen y guardando datos..."):
         url_final_foto = ""
-        if foto_archivo:
-            url_final_foto = subir_a_nube(foto_archivo)
+        if imagen_final:
+            url_final_foto = subir_a_nube(imagen_final)
         
         nuevo_registro = {
             "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -201,12 +206,13 @@ if btn_guardar and nombre and usd_bruto > 0:
         time.sleep(1)
         st.rerun()
 
-# --- HISTORIAL Y COBRANZA (Sin cambios) ---
+# --- HISTORIAL Y COBRANZA ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
+    
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
@@ -234,7 +240,7 @@ if not df_nube.empty:
         st.cache_data.clear()
         st.rerun()
 
-# --- REPORTES (Sin cambios) ---
+# --- REPORTES ---
 st.divider()
 st.subheader("💰 Reporte Semanal")
 if not df_nube.empty:
