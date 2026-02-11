@@ -2,13 +2,32 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import base64
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestor Pro v25 - Ventas", layout="wide")
 
-# --- BOTÓN DE NAVEGACIÓN ---
+# 🔑 PEGA TU CLIENT ID DE IMGUR AQUÍ:
+IMGUR_CLIENT_ID = "TU_CLIENT_ID_AQUÍ" 
+
+# --- FUNCIÓN PARA SUBIR IMÁGENES A IMGUR ---
+def subir_a_imgur(archivo_imagen):
+    """Envía la imagen a Imgur y devuelve el link directo."""
+    try:
+        url = "https://api.imgur.com/3/image"
+        headers = {"Authorization": f"Client-ID {IMGUR_CLIENT_ID}"}
+        payload = {"image": base64.b64encode(archivo_imagen.read()).decode("utf-8")}
+        res = requests.post(url, headers=headers, data=payload)
+        if res.status_code == 200:
+            return res.json()["data"]["link"]
+        else:
+            return None
+    except Exception:
+        return None
+
+# --- NAVEGACIÓN ---
 with st.sidebar:
     if st.button("📦 IR A INVENTARIO", use_container_width=True):
         st.switch_page("pages/Inventario.py")
@@ -20,7 +39,7 @@ st.title("🚀 Control de Ventas")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_segura():
-    """Lee datos de GSheets con reintentos en caso de error."""
+    """Lee datos de GSheets con reintentos."""
     for i in range(3):
         try: 
             df = conn.read(ttl=0)
@@ -32,7 +51,7 @@ def lectura_segura():
 
 @st.cache_data(ttl=3600)
 def obtener_tc():
-    """Obtiene tipo de cambio real o usa uno por defecto."""
+    """Obtiene tipo de cambio real."""
     try: 
         return round(requests.get("https://open.er-api.com/v6/latest/USD").json()["rates"]["MXN"], 2)
     except: 
@@ -54,11 +73,13 @@ rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%
 with st.sidebar:
     st.header(f"📝 Registro (ID: {proximo_id})")
     
-    # --- FORMULARIO DE ENTRADA ---
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
-    
-    # NUEVO CAMPO: CLIENTE
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
+    
+    # NUEVO: SUBIDA DE FOTO
+    foto_archivo = st.file_uploader("📷 SUBIR FOTO", type=["jpg", "png", "jpeg"])
+    if foto_archivo:
+        st.image(foto_archivo, caption="Vista previa", use_container_width=True)
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -73,11 +94,11 @@ with st.sidebar:
         try: return float(str(t).replace(',', '').replace('$', ''))
         except: return 0.0
 
-    # --- CÁLCULOS ---
     usd_bruto = limpiar_num(usd_bruto_txt)
     tc_mercado = limpiar_num(tc_mercado_txt)
     venta_mxn = limpiar_num(venta_mxn_txt)
 
+    # Cálculos
     usd_tax = usd_bruto * 1.0825
     comi_mxn = (usd_tax * 0.12) * 19
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
@@ -112,75 +133,79 @@ with st.sidebar:
 
 # --- ACCIÓN GUARDAR ---
 if btn_guardar and nombre and usd_bruto > 0:
-    nuevo_registro = {
-        "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "PRODUCTO": nombre, 
-        "CLIENTE": cliente if cliente else "N/A", # Guardado del nuevo campo
-        "TIENDA": tienda_final, 
-        "USD_BRUTO": usd_bruto,
-        "USD_CON_8.25": usd_tax, 
-        "USD_FINAL_EQ": usd_final_eq, 
-        "TC_MERCADO": tc_mercado,
-        "COMISION_PAGADA_MXN": comi_mxn, 
-        "COSTO_TOTAL_MXN": costo_tot_mxn,
-        "VENTA_MXN": venta_mxn, 
-        "GANANCIA_MXN": ganancia_mxn, 
-        "RANGO_SEMANA": rango_actual,
-        "ESTADO_PAGO": "🔴 Debe", 
-        "MONTO_RECIBIDO": 0.0, 
-        "COMI_CHECK": False, 
-        "FECHA": datetime.now().strftime("%d/%m/%Y")
-    }
-    
-    nuevo_df = pd.DataFrame([nuevo_registro])
-    
-    # Asegurar orden de columnas
-    columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "CLIENTE", "TIENDA", "USD_BRUTO", 
-                      "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", 
-                      "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", 
-                      "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
+    with st.spinner("Subiendo imagen y guardando datos..."):
+        url_final_foto = ""
+        if foto_archivo:
+            url_final_foto = subir_a_imgur(foto_archivo)
+        
+        nuevo_registro = {
+            "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "PRODUCTO": nombre, 
+            "CLIENTE": cliente if cliente else "N/A",
+            "FOTO_URL": url_final_foto if url_final_foto else "",
+            "TIENDA": tienda_final, 
+            "USD_BRUTO": usd_bruto,
+            "USD_CON_8.25": usd_tax, 
+            "USD_FINAL_EQ": usd_final_eq, 
+            "TC_MERCADO": tc_mercado,
+            "COMISION_PAGADA_MXN": comi_mxn, 
+            "COSTO_TOTAL_MXN": costo_tot_mxn,
+            "VENTA_MXN": venta_mxn, 
+            "GANANCIA_MXN": ganancia_mxn, 
+            "RANGO_SEMANA": rango_actual,
+            "ESTADO_PAGO": "🔴 Debe", 
+            "MONTO_RECIBIDO": 0.0, 
+            "COMI_CHECK": False, 
+            "FECHA": datetime.now().strftime("%d/%m/%Y")
+        }
+        
+        nuevo_df = pd.DataFrame([nuevo_registro])
+        columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "CLIENTE", "FOTO_URL", "TIENDA", "USD_BRUTO", 
+                          "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", 
+                          "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", 
+                          "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
 
-    # Si la nube ya tiene datos, verificar si existe la columna CLIENTE
-    if not df_nube.empty:
-        if "CLIENTE" not in df_nube.columns:
-            df_nube["CLIENTE"] = "N/A"
-        df_final = pd.concat([df_nube, nuevo_df[columnas_orden]], ignore_index=True)
-    else:
-        df_final = nuevo_df[columnas_orden]
+        if not df_nube.empty:
+            for col in ["CLIENTE", "FOTO_URL"]:
+                if col not in df_nube.columns: df_nube[col] = "N/A"
+            df_final = pd.concat([df_nube, nuevo_df[columnas_orden]], ignore_index=True)
+        else:
+            df_final = nuevo_df[columnas_orden]
 
-    conn.update(data=df_final)
-    st.cache_data.clear()
-    st.rerun()
+        conn.update(data=df_final)
+        st.cache_data.clear()
+        st.success("¡Venta registrada con éxito!")
+        time.sleep(1)
+        st.rerun()
 
 # --- HISTORIAL Y COBRANZA ---
 st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
 
-    # Limpieza de datos booleanos para el CheckboxColumn
+    # Limpieza de columnas nuevas y booleanas
+    for col in ["CLIENTE", "FOTO_URL"]:
+        if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
+    
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
         df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
 
-    # Asegurar que CLIENTE exista para visualización
-    if "CLIENTE" not in df_para_editar.columns:
-        df_para_editar["CLIENTE"] = "N/A"
-
     edited_df = st.data_editor(
         df_para_editar,
         column_config={
-            "CLIENTE": st.column_config.TextColumn("👤 CLIENTE", help="Quién realizó la compra"),
+            "FOTO_URL": st.column_config.ImageColumn("🖼️ FOTO"),
+            "CLIENTE": st.column_config.TextColumn("👤 CLIENTE"),
             "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
             "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
         },
-        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE"]],
+        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE", "FOTO_URL"]],
         use_container_width=True, key="ed_v25"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-        # Lógica automática de pago total
         for idx in edited_df.index:
             if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
