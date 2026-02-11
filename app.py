@@ -9,9 +9,9 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Gestor Pro v25 - Cloudinary", layout="wide")
 
 # 🔑 CONFIGURACIÓN DE CLOUDINARY (Copia tus datos aquí)
-CLOUD_NAME = "TU_CLOUD_NAME"
-API_KEY = "TU_API_KEY"
-API_SECRET = "TU_API_SECRET"
+CLOUD_NAME = "doi81tooh"
+API_KEY = "245491997239959"
+API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
 # --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
 def subir_a_nube(archivo_imagen):
