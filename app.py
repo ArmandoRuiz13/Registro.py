@@ -15,23 +15,22 @@ API_KEY = "245491997239959"
 API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
 # --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
-def subir_a_nube(archivo_o_url):
+def subir_a_nube(archivo_imagen):
     """Envía la imagen a Cloudinary y devuelve el link seguro."""
     try:
-        url_api = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
+        url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
         }
-        
-        # Caso 1: Es una URL de internet
-        if isinstance(archivo_o_url, str) and archivo_o_url.startswith("http"):
-            data["file"] = archivo_o_url
-            res = requests.post(url_api, data=data)
-        # Caso 2: Es un archivo pegado/subido
+        # Detectar si el archivo viene de uploader o de paste
+        if hasattr(archivo_imagen, 'getvalue'):
+            img_data = archivo_imagen.getvalue()
         else:
-            files = {"file": archivo_o_url.getvalue()}
-            res = requests.post(url_api, data=data, files=files)
+            img_data = archivo_imagen.read()
+            
+        files = {"file": img_data}
+        res = requests.post(url, data=data, files=files)
         
         if res.status_code == 200:
             return res.json().get("secure_url")
@@ -91,30 +90,14 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- ÁREA DE PEGADO INTELIGENTE ---
+    # --- MODIFICACIÓN PARA PEGAR IMAGEN (ESTILO WHATSAPP) ---
     st.write("📷 **PEGAR IMAGEN AQUÍ**")
-    
-    # Explicación: Para pegar una imagen fìsica (archivo), el foco DEBE estar en un uploader.
-    # Para pegar un link, se usa el text_input.
-    
-    tab_archivo, tab_url = st.tabs(["📋 Pegar Archivo", "🔗 Pegar Link"])
-    
-    with tab_archivo:
-        foto_archivo = st.file_uploader("Haz clic aquí y presiona Ctrl+V", type=["jpg", "png", "jpeg"], key="uploader")
-    
-    with tab_url:
-        url_input = st.text_input("Pega el link de la imagen aquí", key="url_input")
+    # Este widget es el 'Label' que permite el pegado. 
+    # Al hacer clic en él y dar Ctrl+V, captura la imagen del portapapeles.
+    foto_archivo = st.file_uploader("Haz clic aquí y presiona CTRL+V", type=["jpg", "png", "jpeg"])
 
-    # Lógica de detección automática
-    imagen_final = None
     if foto_archivo:
-        imagen_final = foto_archivo
-        st.image(foto_archivo, caption="✅ Imagen detectada (Archivo)", use_container_width=True)
-    elif url_input:
-        imagen_final = url_input
-        st.image(url_input, caption="✅ Imagen detectada (URL)", use_container_width=True)
-    
-    st.divider()
+        st.image(foto_archivo, caption="Vista previa", use_container_width=True)
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -168,8 +151,8 @@ with st.sidebar:
 if btn_guardar and nombre and usd_bruto > 0:
     with st.spinner("Subiendo imagen y guardando datos..."):
         url_final_foto = ""
-        if imagen_final:
-            url_final_foto = subir_a_nube(imagen_final)
+        if foto_archivo:
+            url_final_foto = subir_a_nube(foto_archivo)
         
         nuevo_registro = {
             "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -217,7 +200,6 @@ if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
-    
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
