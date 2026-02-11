@@ -16,7 +16,7 @@ API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
 # --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
 def subir_a_nube(archivo_o_url):
-    """Envía la imagen a Cloudinary (ya sea archivo o URL) y devuelve el link seguro."""
+    """Envía la imagen a Cloudinary y devuelve el link seguro."""
     try:
         url_api = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
         data = {
@@ -24,12 +24,12 @@ def subir_a_nube(archivo_o_url):
             "api_key": API_KEY,
         }
         
-        # Si es una URL de texto
-        if isinstance(archivo_o_url, str):
+        # Caso 1: Es una URL de internet
+        if isinstance(archivo_o_url, str) and archivo_o_url.startswith("http"):
             data["file"] = archivo_o_url
             res = requests.post(url_api, data=data)
+        # Caso 2: Es un archivo pegado/subido
         else:
-            # Si es un archivo subido/pegado
             files = {"file": archivo_o_url.getvalue()}
             res = requests.post(url_api, data=data, files=files)
         
@@ -91,23 +91,28 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- SECCIÓN DE IMAGEN (PEGADO O SUBIDA) ---
-    st.write("📷 **IMAGEN DEL PRODUCTO**")
+    # --- ÁREA DE PEGADO INTELIGENTE ---
+    st.write("📷 **PEGAR IMAGEN AQUÍ**")
     
-    # Opción 1: Campo de texto para pegar URL directo
-    url_pegada = st.text_input("PEGAR URL DE IMAGEN AQUÍ", placeholder="https://ejemplo.com/foto.jpg")
+    # Explicación: Para pegar una imagen fìsica (archivo), el foco DEBE estar en un uploader.
+    # Para pegar un link, se usa el text_input.
     
-    # Opción 2: El uploader tradicional (que también acepta Ctrl+V de archivos)
-    foto_archivo = st.file_uploader("O PEGA/ARRASTRA ARCHIVO AQUÍ", type=["jpg", "png", "jpeg"])
+    tab_archivo, tab_url = st.tabs(["📋 Pegar Archivo", "🔗 Pegar Link"])
+    
+    with tab_archivo:
+        foto_archivo = st.file_uploader("Haz clic aquí y presiona Ctrl+V", type=["jpg", "png", "jpeg"], key="uploader")
+    
+    with tab_url:
+        url_input = st.text_input("Pega el link de la imagen aquí", key="url_input")
 
-    # Lógica de visualización: Prioriza el archivo sobre la URL
+    # Lógica de detección automática
     imagen_final = None
     if foto_archivo:
         imagen_final = foto_archivo
-        st.image(foto_archivo, caption="Vista previa (Archivo)", use_container_width=True)
-    elif url_pegada:
-        imagen_final = url_pegada
-        st.image(url_pegada, caption="Vista previa (URL)", use_container_width=True)
+        st.image(foto_archivo, caption="✅ Imagen detectada (Archivo)", use_container_width=True)
+    elif url_input:
+        imagen_final = url_input
+        st.image(url_input, caption="✅ Imagen detectada (URL)", use_container_width=True)
     
     st.divider()
     
