@@ -24,11 +24,8 @@ def subir_a_nube(archivo_imagen):
             "api_key": API_KEY,
         }
         
-        # Detectar si el archivo viene de uploader o de paste
-        if hasattr(archivo_imagen, 'getvalue'):
-            img_data = archivo_imagen.getvalue()
-        else:
-            img_data = archivo_imagen.read()
+        # Leemos los bytes directamente para asegurar compatibilidad con pegado
+        img_data = archivo_imagen.read()
             
         files = {"file": img_data}
         res = requests.post(url, data=data, files=files)
@@ -91,13 +88,15 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # --- ÁREA PARA PEGAR IMAGEN ---
+    # --- ÁREA DE IMAGEN MEJORADA PARA PEGADO ---
     st.write("📷 **FOTO DEL PRODUCTO**")
-    # Nota: El uploader acepta Ctrl+V si haces clic en él primero.
-    foto_archivo = st.file_uploader("Haz clic aquí y presiona Ctrl+V para pegar", type=["jpg", "png", "jpeg"])
+    # El label ahora es más claro. 
+    # TIP: Para que el Ctrl+V funcione, DEBES hacer clic en el botón "Browse files" 
+    # o simplemente tener el mouse sobre el recuadro antes de pegar.
+    foto_archivo = st.file_uploader("Pega aquí (Ctrl+V) o arrastra la imagen", type=["jpg", "png", "jpeg"], accept_multiple_files=False)
 
     if foto_archivo:
-        st.image(foto_archivo, caption="Vista previa de la imagen", use_container_width=True)
+        st.image(foto_archivo, caption="Imagen lista para subir", use_container_width=True)
     
     opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     tienda_sel = st.selectbox("TIENDA", opciones_tienda)
@@ -152,6 +151,8 @@ if btn_guardar and nombre and usd_bruto > 0:
     with st.spinner("Subiendo imagen y guardando datos..."):
         url_final_foto = ""
         if foto_archivo:
+            # Aseguramos que el puntero esté al inicio antes de subir
+            foto_archivo.seek(0)
             url_final_foto = subir_a_nube(foto_archivo)
         
         nuevo_registro = {
@@ -200,10 +201,12 @@ if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
+    
+    # Asegurar que COMI_CHECK sea booleano
     if "COMI_CHECK" not in df_para_editar.columns:
         df_para_editar["COMI_CHECK"] = False
     else:
-        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
+        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].astype(bool)
 
     edited_df = st.data_editor(
         df_para_editar,
