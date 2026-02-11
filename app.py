@@ -2,29 +2,37 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
-import base64
 from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestor Pro v25 - Ventas", layout="wide")
+st.set_page_config(page_title="Gestor Pro v25 - Cloudinary", layout="wide")
 
-# 🔑 PEGA TU CLIENT ID DE IMGUR AQUÍ:
-IMGUR_CLIENT_ID = "TU_CLIENT_ID_AQUÍ" 
+# 🔑 CONFIGURACIÓN DE CLOUDINARY (Copia tus datos aquí)
+CLOUD_NAME = "TU_CLOUD_NAME"
+API_KEY = "TU_API_KEY"
+API_SECRET = "TU_API_SECRET"
 
-# --- FUNCIÓN PARA SUBIR IMÁGENES A IMGUR ---
-def subir_a_imgur(archivo_imagen):
-    """Envía la imagen a Imgur y devuelve el link directo."""
+# --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
+def subir_a_nube(archivo_imagen):
+    """Envía la imagen a Cloudinary y devuelve el link seguro."""
     try:
-        url = "https://api.imgur.com/3/image"
-        headers = {"Authorization": f"Client-ID {IMGUR_CLIENT_ID}"}
-        payload = {"image": base64.b64encode(archivo_imagen.read()).decode("utf-8")}
-        res = requests.post(url, headers=headers, data=payload)
+        url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
+        # Usamos el preset "ml_default" que Cloudinary crea por defecto
+        data = {
+            "upload_preset": "ml_default", 
+            "api_key": API_KEY,
+        }
+        files = {"file": archivo_imagen.getvalue()}
+        res = requests.post(url, data=data, files=files)
+        
         if res.status_code == 200:
-            return res.json()["data"]["link"]
+            return res.json().get("secure_url")
         else:
+            st.error(f"Error de Cloudinary: {res.json().get('error', {}).get('message')}")
             return None
-    except Exception:
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
         return None
 
 # --- NAVEGACIÓN ---
@@ -33,7 +41,7 @@ with st.sidebar:
         st.switch_page("pages/Inventario.py")
     st.divider()
 
-st.title("🚀 Control de Ventas")
+st.title("🚀 Control de Ventas (Cloudinary Edition)")
 
 # --- CONEXIÓN Y FUNCIONES ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -76,7 +84,6 @@ with st.sidebar:
     nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
     cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
     
-    # NUEVO: SUBIDA DE FOTO
     foto_archivo = st.file_uploader("📷 SUBIR FOTO", type=["jpg", "png", "jpeg"])
     if foto_archivo:
         st.image(foto_archivo, caption="Vista previa", use_container_width=True)
@@ -98,7 +105,6 @@ with st.sidebar:
     tc_mercado = limpiar_num(tc_mercado_txt)
     venta_mxn = limpiar_num(venta_mxn_txt)
 
-    # Cálculos
     usd_tax = usd_bruto * 1.0825
     comi_mxn = (usd_tax * 0.12) * 19
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
@@ -112,7 +118,6 @@ with st.sidebar:
 
     # --- BORRADO ---
     st.divider()
-    st.header("🗑️ Borrar Registro")
     if not df_nube.empty:
         opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
         seleccion = st.selectbox("ID a borrar:", opciones_del)
@@ -122,7 +127,7 @@ with st.sidebar:
         if st.session_state.get('confirm_delete', False):
             st.error("¿Confirmas?")
             c1, c2 = st.columns(2)
-            if c1.button("SÍ", type="primary"):
+            if c1.button("SÍ"):
                 conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
                 st.session_state.confirm_delete = False
                 st.cache_data.clear()
@@ -136,7 +141,7 @@ if btn_guardar and nombre and usd_bruto > 0:
     with st.spinner("Subiendo imagen y guardando datos..."):
         url_final_foto = ""
         if foto_archivo:
-            url_final_foto = subir_a_imgur(foto_archivo)
+            url_final_foto = subir_a_nube(foto_archivo)
         
         nuevo_registro = {
             "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -174,7 +179,7 @@ if btn_guardar and nombre and usd_bruto > 0:
 
         conn.update(data=df_final)
         st.cache_data.clear()
-        st.success("¡Venta registrada con éxito!")
+        st.success("¡Guardado exitosamente!")
         time.sleep(1)
         st.rerun()
 
@@ -183,7 +188,6 @@ st.subheader("📋 Historial y Cobranza")
 if not df_nube.empty:
     df_para_editar = df_nube.copy().sort_index(ascending=False)
 
-    # Limpieza de columnas nuevas y booleanas
     for col in ["CLIENTE", "FOTO_URL"]:
         if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
     
@@ -201,8 +205,8 @@ if not df_nube.empty:
             "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
             "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
         },
-        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE", "FOTO_URL"]],
-        use_container_width=True, key="ed_v25"
+        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE"]],
+        use_container_width=True, key="ed_v25_cloud"
     )
 
     if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
@@ -211,7 +215,7 @@ if not df_nube.empty:
                 edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
         
         conn.update(data=edited_df.sort_index())
-        st.success("¡Información actualizada!")
+        st.success("¡Base de datos actualizada!")
         st.cache_data.clear()
         st.rerun()
 
