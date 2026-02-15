@@ -55,31 +55,35 @@ for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
     df_inv[col] = pd.to_numeric(df_inv[col], errors='coerce').fillna(0)
 
 # --- FORMULARIO DE REGISTRO (SIDEBAR) ---
-with st.sidebar:
-    st.header("🆕 Nuevo Producto")
-    
-    tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
-    f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
-    f_tienda_final = st.text_input("Nombre de Tienda Custom") if f_tienda_sel == "CUSTOM" else f_tienda_sel
+    with st.sidebar:
+        st.header("🆕 Nuevo Producto")
+        
+        tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
+        f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
+        f_tienda_final = st.text_input("Nombre de Tienda Custom") if f_tienda_sel == "CUSTOM" else f_tienda_sel
 
-    opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
-    f_talla_sel = st.selectbox("Talla", opciones_talla)
-    f_talla_final = st.text_input("Escribe la talla") if f_talla_sel == "Numérica/Otra" else f_talla_sel
+        opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
+        f_talla_sel = st.selectbox("Talla", opciones_talla)
+        f_talla_final = st.text_input("Escribe la talla") if f_talla_sel == "Numérica/Otra" else f_talla_sel
 
-    # Selector de Imagen
-    f_foto = st.file_uploader("📷 Subir Foto", type=["jpg", "png", "jpeg"])
+        # --- CAMBIO AQUÍ: Cargador + Vista Previa ---
+        f_foto = st.file_uploader("📷 Seleccionar Foto", type=["jpg", "png", "jpeg"])
+        
+        if f_foto:
+            st.image(f_foto, caption="Vista previa de la prenda", use_container_width=True)
+        # --------------------------------------------
 
-    with st.form("registro_inv", clear_on_submit=False):
-        f_nombre = st.text_input("Nombre del Producto")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            f_precio_costo = st.text_input("Precio Costo")
-            f_color = st.text_input("Color")
-        with col_f2:
-            f_precio_venta = st.text_input("Precio Venta")
-            f_cantidad_txt = st.text_input("Stock Inicial")
+        with st.form("registro_inv", clear_on_submit=False):
+            f_nombre = st.text_input("Nombre del Producto")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                f_precio_costo = st.text_input("Precio Costo")
+                f_color = st.text_input("Color")
+            with col_f2:
+                f_precio_venta = st.text_input("Precio Venta")
+                f_cantidad_txt = st.text_input("Stock Inicial")
 
-        f_vendidos_txt = st.text_input("Ventas realizadas", value="0")
+            f_vendidos_txt = st.text_input("Ventas realizadas", value="0")
         
         def limpiar_num(val):
             try: return float(str(val).replace(',', '')) if val != "" else 0.0
