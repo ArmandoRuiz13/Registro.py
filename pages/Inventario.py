@@ -39,7 +39,6 @@ st.title("📦 Gestión de Inventario y Stock")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_inventario():
-    # El ID no se incluye aquí porque es imaginario/visual
     columnas_base = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
     try: 
         df = conn.read(worksheet="Inventario", ttl=0)
@@ -57,7 +56,6 @@ def lectura_inventario():
         return pd.DataFrame(columns=columnas_base)
 
 df_inv = lectura_inventario()
-# ID visual para el Sidebar
 proximo_id_visual = len(df_inv)
 
 # Conversión de tipos para cálculos
@@ -122,52 +120,59 @@ with st.sidebar:
                     time.sleep(1)
                     st.rerun()
 
-    # --- BORRADO ---
+    # --- BORRADO CON CONFIRMACIÓN ---
     st.divider()
     if not df_inv.empty:
         opciones_del = [f"{i} - {df_inv.loc[i, 'Producto']}" for i in reversed(df_inv.index)]
         seleccion = st.selectbox("Borrar Registro:", opciones_del)
+        
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
-            idx_borrar = int(seleccion.split(" - ")[0])
-            df_final = df_inv.drop(idx_borrar)
-            conn.update(worksheet="Inventario", data=df_final)
-            st.cache_data.clear()
-            st.rerun()
+            st.session_state.confirmar_borrado_inv = True
+        
+        if st.session_state.get('confirmar_borrado_inv', False):
+            st.error("¿Estás seguro de eliminar este producto?")
+            c1, c2 = st.columns(2)
+            if c1.button("SÍ, ELIMINAR", use_container_width=True):
+                idx_borrar = int(seleccion.split(" - ")[0])
+                df_final = df_inv.drop(idx_borrar)
+                conn.update(worksheet="Inventario", data=df_final)
+                st.session_state.confirmar_borrado_inv = False
+                st.cache_data.clear()
+                st.rerun()
+            if c2.button("CANCELAR", use_container_width=True):
+                st.session_state.confirmar_borrado_inv = False
+                st.rerun()
 
-# --- CÁLCULOS DINÁMICOS ---
+# --- CÁLCULOS ---
 df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
 df_inv["Venta Total $"] = df_inv["Vendidos"] * df_inv["Precio Venta"]
 df_inv["Ganancia $"] = (df_inv["Precio Venta"] - df_inv["Precio MXN"]) * df_inv["Vendidos"]
-
-# CREACIÓN DEL ID IMAGINARIO (Basado en el índice real para no perder referencia)
 df_inv["ID"] = df_inv.index
 
-# REORDENAR COLUMNAS: ID al principio, Imagen al final de todo
+# ORDEN: ID al inicio, Cálculos en medio e Imagen al final
 cols_vista = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", 
               "Cantidad", "Vendidos", "Disponible", "Venta Total $", "Ganancia $", "Imagen"]
 
-# --- TABLA (REGISTROS NUEVOS ARRIBA) ---
+# --- TABLA ---
 st.subheader("📊 Tabla de Inventario")
-
 df_vista = df_inv[cols_vista].sort_index(ascending=False)
 
 edited_inv = st.data_editor(
     df_vista,
     column_config={
-        "ID": st.column_config.NumberColumn("ID", help="ID Visual no guardado en Sheets"),
+        "ID": st.column_config.NumberColumn("ID", disabled=True),
         "Precio MXN": st.column_config.NumberColumn("COSTO", format="$%.2f"),
         "Precio Venta": st.column_config.NumberColumn("VENTA", format="$%.2f"),
         "Disponible": st.column_config.NumberColumn("STOCK", disabled=True),
-        "Venta Total $": st.column_config.NumberColumn("TOTAL VENDIDO", format="$%.2f", disabled=True),
+        "Venta Total $": st.column_config.NumberColumn("V. TOTAL", format="$%.2f", disabled=True),
         "Ganancia $": st.column_config.NumberColumn("GANANCIA", format="$%.2f", disabled=True),
-        "Imagen": st.column_config.ImageColumn("🖼️ FOTO (FINAL)") 
+        "Imagen": st.column_config.ImageColumn("🖼️ IMAGEN") 
     },
     use_container_width=True,
     hide_index=True
 )
 
 if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-    # Para guardar, quitamos las columnas calculadas y el ID imaginario
     cols_a_guardar = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
     df_sincronizar = edited_inv.sort_index()[cols_a_guardar]
     conn.update(worksheet="Inventario", data=df_sincronizar)
