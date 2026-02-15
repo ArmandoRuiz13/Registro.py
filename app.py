@@ -1,150 +1,264 @@
 import streamlit as st
+import requests
 import pandas as pd
 import time
-import requests
+from datetime import datetime, timedelta
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Inventario Pro", layout="wide")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Gestor Pro v25 - Cloudinary", layout="wide")
 
 # 🔑 CONFIGURACIÓN DE CLOUDINARY
 CLOUD_NAME = "doi81tooh"
 API_KEY = "245491997239959"
 API_SECRET = "8Hgvfh6amI8vd0W_rG43HnSb2OI"
 
-# --- FUNCIÓN PARA SUBIR IMÁGENES ---
+# --- FUNCIÓN PARA SUBIR IMÁGENES A CLOUDINARY ---
 def subir_a_nube(archivo_imagen):
+    """Envía la imagen a Cloudinary con optimización automática."""
     try:
         url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/image/upload"
         data = {
             "upload_preset": "ml_default", 
             "api_key": API_KEY,
+            "quality": "auto",
+            "fetch_format": "auto"
         }
         files = {"file": archivo_imagen.getvalue()}
         res = requests.post(url, data=data, files=files)
-        return res.json().get("secure_url") if res.status_code == 200 else None
-    except:
+        
+        if res.status_code == 200:
+            return res.json().get("secure_url")
+        else:
+            error_msg = res.json().get('error', {}).get('message')
+            st.error(f"Error de Cloudinary: {error_msg}")
+            return None
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
         return None
 
-# BOTÓN PARA VOLVER
-if st.sidebar.button("⬅️ VOLVER A VENTAS"):
-    st.switch_page("app.py") 
+# --- NAVEGACIÓN ---
+with st.sidebar:
+    if st.button("📦 IR A INVENTARIO", use_container_width=True):
+        st.switch_page("pages/Inventario.py")
+    st.divider()
 
-st.sidebar.divider()
-st.title("📦 Gestión de Inventario y Stock")
+st.title("🚀 Control de Ventas (Cloudinary Edition)")
 
+# --- CONEXIÓN Y FUNCIONES ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def lectura_inventario():
-    # Se agregó la columna "Imagen"
-    columnas_base = ["Imagen", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos"]
+def lectura_segura():
+    """Lee datos de GSheets forzando la limpieza de caché para evitar datos viejos."""
+    st.cache_data.clear() # Limpia caché de Streamlit
+    for i in range(3):
+        try: 
+            # ttl=0 obliga a leer directamente de Google Sheets cada vez
+            df = conn.read(ttl=0)
+            if df is not None:
+                df.columns = [str(c).strip() for c in df.columns]
+                return df
+        except Exception: 
+            time.sleep(1)
+    return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def obtener_tc():
+    """Obtiene tipo de cambio real."""
     try: 
-        df = conn.read(worksheet="Inventario", ttl=0)
-        if df is None or df.empty:
-            return pd.DataFrame(columns=columnas_base)
-        df.columns = [str(c).strip() for c in df.columns]
-        for col in columnas_base:
-            if col not in df.columns:
-                df[col] = "" if col in ["Imagen", "Producto", "Tienda", "Color", "Talla"] else 0
-        return df[columnas_base]
-    except Exception:
-        return pd.DataFrame(columns=columnas_base)
+        return round(requests.get("https://open.er-api.com/v6/latest/USD").json()["rates"]["MXN"], 2)
+    except: 
+        return 18.50
 
-df_inv = lectura_inventario()
+tc_actual = obtener_tc()
 
-for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
-    df_inv[col] = pd.to_numeric(df_inv[col], errors='coerce').fillna(0)
+# --- CARGA DE DATOS ---
+df_nube = lectura_segura()
+proximo_id = len(df_nube)
 
-# --- FORMULARIO DE REGISTRO (SIDEBAR) ---
+# --- RANGO SEMANAL ACTUAL ---
+hoy = datetime.now()
+inicio_semana = hoy - timedelta(days=hoy.weekday())
+fin_semana = inicio_semana + timedelta(days=6)
+rango_actual = f"{inicio_semana.strftime('%d/%m/%y')} al {fin_semana.strftime('%d/%m/%y')}"
+
+# --- SIDEBAR: REGISTRO Y BORRADO ---
 with st.sidebar:
-    st.header("🆕 Nuevo Producto")
+    st.header(f"📝 Registro (ID: {proximo_id})")
     
-    tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
-    f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
-    f_tienda_final = st.text_input("Nombre de Tienda Custom") if f_tienda_sel == "CUSTOM" else f_tienda_sel
+    nombre = st.text_input("PRODUCTO", placeholder="Nombre del producto")
+    cliente = st.text_input("CLIENTE (Opcional)", placeholder="¿A quién se le vendió?")
+    
+    foto_archivo = st.file_uploader("📷 SUBIR FOTO", type=["jpg", "png", "jpeg"])
+    if foto_archivo:
+        st.image(foto_archivo, caption="Vista previa", use_container_width=True)
+    
+    opciones_tienda = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
+    tienda_sel = st.selectbox("TIENDA", opciones_tienda)
+    tienda_final = st.text_input("Tienda custom:") if tienda_sel == "CUSTOM" else tienda_sel
+    
+    usd_bruto_txt = st.text_input("COSTO USD", placeholder="Ej: 50.00")
+    tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
+    venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="Ej: 1500.00")
+    
+    def limpiar_num(t):
+        if not t: return 0.0
+        try: return float(str(t).replace(',', '').replace('$', ''))
+        except: return 0.0
 
-    opciones_talla = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "Numérica/Otra"]
-    f_talla_sel = st.selectbox("Talla", opciones_talla)
-    f_talla_final = st.text_input("Escribe la talla") if f_talla_sel == "Numérica/Otra" else f_talla_sel
+    usd_bruto = limpiar_num(usd_bruto_txt)
+    tc_mercado = limpiar_num(tc_mercado_txt)
+    venta_mxn = limpiar_num(venta_mxn_txt)
 
-    # Selector de Imagen
-    f_foto = st.file_uploader("📷 Subir Foto", type=["jpg", "png", "jpeg"])
+    usd_tax = usd_bruto * 1.0825
+    comi_mxn = (usd_tax * 0.12) * 19
+    costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
+    ganancia_mxn = venta_mxn - costo_tot_mxn
+    usd_final_eq = costo_tot_mxn / tc_mercado if tc_mercado > 0 else 0
 
-    with st.form("registro_inv", clear_on_submit=False):
-        f_nombre = st.text_input("Nombre del Producto")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            f_precio_costo = st.text_input("Precio Costo")
-            f_color = st.text_input("Color")
-        with col_f2:
-            f_precio_venta = st.text_input("Precio Venta")
-            f_cantidad_txt = st.text_input("Stock Inicial")
+    if st.button("CALCULAR 🔍", use_container_width=True):
+        st.info(f"Comisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
 
-        f_vendidos_txt = st.text_input("Ventas realizadas", value="0")
+    btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
+
+    # --- BORRADO ---
+    st.divider()
+    if not df_nube.empty:
+        opciones_del = [f"{i} - {df_nube.loc[i, 'PRODUCTO']}" for i in reversed(df_nube.index)]
+        seleccion = st.selectbox("ID a borrar:", opciones_del)
+        if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
+            st.session_state.confirm_delete = True
         
-        def limpiar_num(val):
-            try: return float(str(val).replace(',', '')) if val != "" else 0.0
-            except: return 0.0
-
-        if st.form_submit_button("AÑADIR REGISTRO", use_container_width=True):
-            if f_nombre and f_tienda_final:
-                with st.spinner("Subiendo imagen..."):
-                    url_foto = subir_a_nube(f_foto) if f_foto else ""
-                
-                nuevo = pd.DataFrame([{
-                    "Imagen": url_foto,
-                    "Producto": f_nombre, 
-                    "Tienda": f_tienda_final, 
-                    "Precio MXN": limpiar_num(f_precio_costo),
-                    "Precio Venta": limpiar_num(f_precio_venta),
-                    "Color": f_color, 
-                    "Talla": f_talla_final, 
-                    "Cantidad": limpiar_num(f_cantidad_txt), 
-                    "Vendidos": limpiar_num(f_vendidos_txt)
-                }])
-                df_inv = pd.concat([df_inv, nuevo], ignore_index=True)
-                conn.update(worksheet="Inventario", data=df_inv)
+        if st.session_state.get('confirm_delete', False):
+            st.error("¿Confirmas?")
+            c1, c2 = st.columns(2)
+            if c1.button("SÍ"):
+                conn.update(data=df_nube.drop(int(seleccion.split(" - ")[0])))
+                st.session_state.confirm_delete = False
+                time.sleep(1) # Pausa para que Google procese el borrado
                 st.cache_data.clear()
-                st.success("¡Guardado!")
-                time.sleep(1)
                 st.rerun()
-            else:
-                st.error("Faltan datos")
+            if c2.button("NO"):
+                st.session_state.confirm_delete = False
+                st.rerun()
 
-# --- CÁLCULOS ---
-df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
-df_inv["Venta Total $"] = df_inv["Vendidos"] * df_inv["Precio Venta"]
-df_inv["Ganancia $"] = (df_inv["Precio Venta"] - df_inv["Precio MXN"]) * df_inv["Vendidos"]
+# --- ACCIÓN GUARDAR ---
+if btn_guardar and nombre and usd_bruto > 0:
+    with st.spinner("Subiendo a Cloudinary y sincronizando Sheets..."):
+        url_final_foto = ""
+        if foto_archivo:
+            url_final_foto = subir_a_nube(foto_archivo)
+            # Validación de seguridad solicitada:
+            if not url_final_foto:
+                st.error("❌ Falló la subida a Cloudinary. Verifica el Upload Preset.")
+                st.stop() 
+        
+        # Leemos los datos más frescos justo antes de concatenar
+        df_fresco = lectura_segura()
+        
+        nuevo_registro = {
+            "FECHA_REGISTRO": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "PRODUCTO": nombre, 
+            "CLIENTE": cliente if cliente else "N/A",
+            "FOTO_URL": url_final_foto,
+            "TIENDA": tienda_final, 
+            "USD_BRUTO": usd_bruto,
+            "USD_CON_8.25": usd_tax, 
+            "USD_FINAL_EQ": usd_final_eq, 
+            "TC_MERCADO": tc_mercado,
+            "COMISION_PAGADA_MXN": comi_mxn, 
+            "COSTO_TOTAL_MXN": costo_tot_mxn,
+            "VENTA_MXN": venta_mxn, 
+            "GANANCIA_MXN": ganancia_mxn, 
+            "RANGO_SEMANA": rango_actual,
+            "ESTADO_PAGO": "🔴 Debe", 
+            "MONTO_RECIBIDO": 0.0, 
+            "COMI_CHECK": False, 
+            "FECHA": datetime.now().strftime("%d/%m/%Y")
+        }
+        
+        nuevo_df = pd.DataFrame([nuevo_registro])
+        columnas_orden = ["FECHA_REGISTRO", "PRODUCTO", "CLIENTE", "FOTO_URL", "TIENDA", "USD_BRUTO", 
+                          "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", 
+                          "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "RANGO_SEMANA", 
+                          "ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "FECHA"]
 
-# --- TABLA ---
-st.subheader("📊 Tabla de Inventario")
-edited_inv = st.data_editor(
-    df_inv,
-    column_config={
-        "Imagen": st.column_config.ImageColumn("🖼️ Vista"),
-        "Disponible": st.column_config.NumberColumn(disabled=True),
-        "Venta Total $": st.column_config.NumberColumn(format="$%.2f", disabled=True),
-        "Ganancia $": st.column_config.NumberColumn(format="$%.2f", disabled=True)
-    },
-    use_container_width=True,
-    hide_index=True
-)
+        if not df_fresco.empty:
+            for col in ["CLIENTE", "FOTO_URL"]:
+                if col not in df_fresco.columns: df_fresco[col] = "N/A"
+            df_final = pd.concat([df_fresco, nuevo_df[columnas_orden]], ignore_index=True)
+        else:
+            df_final = nuevo_df[columnas_orden]
 
-if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-    cols_s = ["Imagen", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos"]
-    conn.update(worksheet="Inventario", data=edited_inv[cols_s])
-    st.success("¡Sincronizado!")
-    st.cache_data.clear()
-    time.sleep(1)
-    st.rerun()
+        # Sincronización con Google Sheets
+        conn.update(data=df_final)
+        
+        # Pausa técnica de 2 segundos para asegurar que Google Sheets guarde el cambio
+        time.sleep(2)
+        st.cache_data.clear()
+        st.success("✅ ¡Guardado y sincronizado exitosamente!")
+        time.sleep(1)
+        st.rerun()
 
-# --- ESTADÍSTICAS ---
-st.divider()
-st.subheader("📈 Resumen de Stock y Ventas")
-if not edited_inv.empty:
-    m1, m2, m3, m4 = st.columns(4)
-    total_disponible = int(edited_inv['Disponible'].sum())
+# --- HISTORIAL Y COBRANZA ---
+st.subheader("📋 Historial y Cobranza")
+if not df_nube.empty:
+    df_para_editar = df_nube.copy().sort_index(ascending=False)
+
+    for col in ["CLIENTE", "FOTO_URL"]:
+        if col not in df_para_editar.columns: df_para_editar[col] = "N/A"
     
-    m1.metric("📦 Stock Restante", f"{total_disponible} pzs")
-    m2.metric("💰 Ventas Totales", f"${edited_inv['Venta Total $'].sum():,.2f}")
-    m3.metric("💵 Ganancia Real", f"${edited_inv['Ganancia $'].sum():,.2f}")
-    m4.metric("🏗️ Valor en Bodega", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
+    if "COMI_CHECK" not in df_para_editar.columns:
+        df_para_editar["COMI_CHECK"] = False
+    else:
+        df_para_editar["COMI_CHECK"] = df_para_editar["COMI_CHECK"].fillna(False).astype(bool)
+
+    edited_df = st.data_editor(
+        df_para_editar,
+        column_config={
+            "FOTO_URL": st.column_config.ImageColumn("🖼️ FOTO"),
+            "CLIENTE": st.column_config.TextColumn("👤 CLIENTE"),
+            "ESTADO_PAGO": st.column_config.SelectboxColumn("ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]),
+            "MONTO_RECIBIDO": st.column_config.NumberColumn("RECIBIDO", format="$%.2f"),
+            "COMI_CHECK": st.column_config.CheckboxColumn("COMI. PAGADA")
+        },
+        disabled=[c for c in df_para_editar.columns if c not in ["ESTADO_PAGO", "MONTO_RECIBIDO", "COMI_CHECK", "CLIENTE"]],
+        use_container_width=True, key="ed_v25_cloud"
+    )
+
+    if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
+        for idx in edited_df.index:
+            if edited_df.at[idx, "ESTADO_PAGO"] == "🟢 Pagado":
+                edited_df.at[idx, "MONTO_RECIBIDO"] = edited_df.at[idx, "VENTA_MXN"]
+        
+        conn.update(data=edited_df.sort_index())
+        time.sleep(2) # Pausa de sincronización
+        st.success("¡Base de datos actualizada!")
+        st.cache_data.clear()
+        st.rerun()
+
+# --- REPORTES ---
+st.divider()
+st.subheader("💰 Reporte Semanal")
+if not df_nube.empty:
+    semanas = df_nube["RANGO_SEMANA"].unique().tolist()
+    c_sel, c_b1, c_b2 = st.columns([2, 1, 1])
+    with c_sel: 
+        sem_sel = st.selectbox("Semana:", semanas, label_visibility="collapsed")
+    with c_b1: 
+        btn_sel = st.button("Consultar Selección", use_container_width=True)
+    with c_b2: 
+        btn_act = st.button("SEMANA ACTUAL", type="primary", use_container_width=True)
+
+    def stats(df_f, tit):
+        st.markdown(f"#### {tit}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Venta Total", f"${pd.to_numeric(df_f['VENTA_MXN']).sum():,.2f}")
+        m2.metric("Comisiones", f"${pd.to_numeric(df_f['COMISION_PAGADA_MXN']).sum():,.2f}")
+        m3.metric("Ganancia", f"${pd.to_numeric(df_f['GANANCIA_MXN']).sum():,.2f}")
+
+    if btn_sel: 
+        stats(df_nube[df_nube["RANGO_SEMANA"] == sem_sel], sem_sel)
+    
+    if btn_act:
+        stats(df_nube[df_nube["RANGO_SEMANA"] == rango_actual], "Semana Actual") 
