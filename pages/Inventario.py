@@ -39,8 +39,8 @@ st.title("📦 Gestión de Inventario y Stock")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_inventario():
-    # ID al principio e Imagen al final
-    columnas_base = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
+    # El ID no se incluye aquí porque es imaginario/visual
+    columnas_base = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
     try: 
         df = conn.read(worksheet="Inventario", ttl=0)
         if df is None or df.empty:
@@ -48,17 +48,17 @@ def lectura_inventario():
         
         df.columns = [str(c).strip() for c in df.columns]
         
-        # Asegurar que todas las columnas existan
         for col in columnas_base:
             if col not in df.columns:
-                df[col] = 0 if col in ["ID", "Precio MXN", "Precio Venta", "Cantidad", "Vendidos"] else ""
+                df[col] = 0 if col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"] else ""
         
         return df[columnas_base]
     except Exception:
         return pd.DataFrame(columns=columnas_base)
 
 df_inv = lectura_inventario()
-proximo_id = len(df_inv)
+# ID visual para el Sidebar
+proximo_id_visual = len(df_inv)
 
 # Conversión de tipos para cálculos
 for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
@@ -66,7 +66,7 @@ for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
 
 # --- SIDEBAR: REGISTRO ---
 with st.sidebar:
-    st.header(f"🆕 Nuevo Producto (ID: {proximo_id})")
+    st.header(f"🆕 Nuevo Producto (ID: {proximo_id_visual})")
     
     tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
@@ -76,7 +76,6 @@ with st.sidebar:
     f_talla_sel = st.selectbox("Talla", opciones_talla)
     f_talla_final = st.text_input("Escribe la talla") if f_talla_sel == "Numérica/Otra" else f_talla_sel
 
-    # CARGA Y VISTA PREVIA
     f_foto = st.file_uploader("📷 FOTO DEL PRODUCTO", type=["jpg", "png", "jpeg"])
     if f_foto:
         st.image(f_foto, caption="Vista previa", use_container_width=True)
@@ -103,7 +102,6 @@ with st.sidebar:
                     url_foto = subir_a_nube(f_foto) if f_foto else ""
                     
                     nuevo = pd.DataFrame([{
-                        "ID": proximo_id,
                         "Producto": f_nombre, 
                         "Tienda": f_tienda_final, 
                         "Precio MXN": limpiar_num(f_precio_costo),
@@ -115,7 +113,6 @@ with st.sidebar:
                         "Imagen": url_foto
                     }])
                     
-                    # Se concatena al final del CSV, pero la vista la invertiremos después
                     df_fresco = lectura_inventario()
                     df_final = pd.concat([df_fresco, nuevo], ignore_index=True)
                     conn.update(worksheet="Inventario", data=df_final)
@@ -129,7 +126,7 @@ with st.sidebar:
     st.divider()
     if not df_inv.empty:
         opciones_del = [f"{i} - {df_inv.loc[i, 'Producto']}" for i in reversed(df_inv.index)]
-        seleccion = st.selectbox("Borrar por ID:", opciones_del)
+        seleccion = st.selectbox("Borrar Registro:", opciones_del)
         if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
             idx_borrar = int(seleccion.split(" - ")[0])
             df_final = df_inv.drop(idx_borrar)
@@ -137,37 +134,43 @@ with st.sidebar:
             st.cache_data.clear()
             st.rerun()
 
-# --- CÁLCULOS ---
+# --- CÁLCULOS DINÁMICOS ---
 df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
 df_inv["Venta Total $"] = df_inv["Vendidos"] * df_inv["Precio Venta"]
 df_inv["Ganancia $"] = (df_inv["Precio Venta"] - df_inv["Precio MXN"]) * df_inv["Vendidos"]
 
-# --- TABLA (NUEVOS ARRIBA E IMAGEN AL FINAL) ---
+# CREACIÓN DEL ID IMAGINARIO (Basado en el índice real para no perder referencia)
+df_inv["ID"] = df_inv.index
+
+# REORDENAR COLUMNAS: ID al principio, Imagen al final de todo
+cols_vista = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", 
+              "Cantidad", "Vendidos", "Disponible", "Venta Total $", "Ganancia $", "Imagen"]
+
+# --- TABLA (REGISTROS NUEVOS ARRIBA) ---
 st.subheader("📊 Tabla de Inventario")
 
-# Invertimos el dataframe para que el último ID aparezca primero
-df_vista = df_inv.sort_index(ascending=False)
+df_vista = df_inv[cols_vista].sort_index(ascending=False)
 
 edited_inv = st.data_editor(
     df_vista,
     column_config={
-        "ID": st.column_config.NumberColumn("ID", disabled=True),
+        "ID": st.column_config.NumberColumn("ID", help="ID Visual no guardado en Sheets"),
         "Precio MXN": st.column_config.NumberColumn("COSTO", format="$%.2f"),
         "Precio Venta": st.column_config.NumberColumn("VENTA", format="$%.2f"),
         "Disponible": st.column_config.NumberColumn("STOCK", disabled=True),
         "Venta Total $": st.column_config.NumberColumn("TOTAL VENDIDO", format="$%.2f", disabled=True),
         "Ganancia $": st.column_config.NumberColumn("GANANCIA", format="$%.2f", disabled=True),
-        "Imagen": st.column_config.ImageColumn("🖼️ VISTA PREVIA") # Imagen al final
+        "Imagen": st.column_config.ImageColumn("🖼️ FOTO (FINAL)") 
     },
     use_container_width=True,
     hide_index=True
 )
 
 if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-    # Reordenar al índice original antes de guardar en Google Sheets
-    df_a_guardar = edited_inv.sort_index()
-    cols_s = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
-    conn.update(worksheet="Inventario", data=df_a_guardar[cols_s])
+    # Para guardar, quitamos las columnas calculadas y el ID imaginario
+    cols_a_guardar = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
+    df_sincronizar = edited_inv.sort_index()[cols_a_guardar]
+    conn.update(worksheet="Inventario", data=df_sincronizar)
     st.success("¡Sincronizado!")
     st.cache_data.clear()
     st.rerun()
