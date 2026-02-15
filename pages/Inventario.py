@@ -39,20 +39,26 @@ st.title("📦 Gestión de Inventario y Stock")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_inventario():
-    columnas_base = ["Imagen", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos"]
+    # ID al principio e Imagen al final
+    columnas_base = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
     try: 
         df = conn.read(worksheet="Inventario", ttl=0)
         if df is None or df.empty:
             return pd.DataFrame(columns=columnas_base)
+        
         df.columns = [str(c).strip() for c in df.columns]
+        
+        # Asegurar que todas las columnas existan
         for col in columnas_base:
             if col not in df.columns:
-                df[col] = "" if col in ["Imagen", "Producto", "Tienda", "Color", "Talla"] else 0
+                df[col] = 0 if col in ["ID", "Precio MXN", "Precio Venta", "Cantidad", "Vendidos"] else ""
+        
         return df[columnas_base]
     except Exception:
         return pd.DataFrame(columns=columnas_base)
 
 df_inv = lectura_inventario()
+proximo_id = len(df_inv)
 
 # Conversión de tipos para cálculos
 for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
@@ -60,7 +66,7 @@ for col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"]:
 
 # --- SIDEBAR: REGISTRO ---
 with st.sidebar:
-    st.header("🆕 Nuevo Producto")
+    st.header(f"🆕 Nuevo Producto (ID: {proximo_id})")
     
     tiendas_opc = ["Hollister", "American Eagle", "Macys", "Finishline", "Guess", "Nike", "Aeropostale", "JDSports", "CUSTOM"]
     f_tienda_sel = st.selectbox("Tienda", tiendas_opc)
@@ -70,19 +76,19 @@ with st.sidebar:
     f_talla_sel = st.selectbox("Talla", opciones_talla)
     f_talla_final = st.text_input("Escribe la talla") if f_talla_sel == "Numérica/Otra" else f_talla_sel
 
-    # --- CARGA Y VISTA PREVIA DE IMAGEN ---
+    # CARGA Y VISTA PREVIA
     f_foto = st.file_uploader("📷 FOTO DEL PRODUCTO", type=["jpg", "png", "jpeg"])
     if f_foto:
-        st.image(f_foto, caption="Vista previa seleccionada", use_container_width=True)
+        st.image(f_foto, caption="Vista previa", use_container_width=True)
 
     with st.form("registro_inv", clear_on_submit=False):
         f_nombre = st.text_input("Nombre del Producto")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            f_precio_costo = st.text_input("Precio Costo (MXN)")
+            f_precio_costo = st.text_input("Precio Costo")
             f_color = st.text_input("Color")
         with col_f2:
-            f_precio_venta = st.text_input("Precio Venta (MXN)")
+            f_precio_venta = st.text_input("Precio Venta")
             f_cantidad_txt = st.text_input("Stock Inicial")
 
         f_vendidos_txt = st.text_input("Ventas realizadas", value="0")
@@ -93,11 +99,11 @@ with st.sidebar:
 
         if st.form_submit_button("AÑADIR A INVENTARIO", use_container_width=True):
             if f_nombre and f_tienda_final:
-                with st.spinner("Subiendo imagen y guardando..."):
+                with st.spinner("Guardando..."):
                     url_foto = subir_a_nube(f_foto) if f_foto else ""
                     
                     nuevo = pd.DataFrame([{
-                        "Imagen": url_foto,
+                        "ID": proximo_id,
                         "Producto": f_nombre, 
                         "Tienda": f_tienda_final, 
                         "Precio MXN": limpiar_num(f_precio_costo),
@@ -105,71 +111,72 @@ with st.sidebar:
                         "Color": f_color, 
                         "Talla": f_talla_final, 
                         "Cantidad": limpiar_num(f_cantidad_txt), 
-                        "Vendidos": limpiar_num(f_vendidos_txt)
+                        "Vendidos": limpiar_num(f_vendidos_txt),
+                        "Imagen": url_foto
                     }])
                     
-                    df_inv_fresco = lectura_inventario()
-                    df_final = pd.concat([df_inv_fresco, nuevo], ignore_index=True)
+                    # Se concatena al final del CSV, pero la vista la invertiremos después
+                    df_fresco = lectura_inventario()
+                    df_final = pd.concat([df_fresco, nuevo], ignore_index=True)
                     conn.update(worksheet="Inventario", data=df_final)
                     
                     st.cache_data.clear()
-                    st.success("✅ ¡Producto añadido!")
+                    st.success("✅ ¡Añadido!")
                     time.sleep(1)
                     st.rerun()
-            else:
-                st.error("⚠️ Indica al menos el nombre y la tienda.")
 
     # --- BORRADO ---
     st.divider()
-    st.header("🗑️ Borrar Registro")
     if not df_inv.empty:
-        prod_borrar = st.selectbox("Seleccionar para eliminar:", df_inv.index, 
-                                    format_func=lambda x: f"{df_inv.loc[x, 'Producto']} - {df_inv.loc[x, 'Talla']}")
-        if st.button("ELIMINAR PERMANENTEMENTE"):
-            df_inv = df_inv.drop(prod_borrar)
-            conn.update(worksheet="Inventario", data=df_inv)
+        opciones_del = [f"{i} - {df_inv.loc[i, 'Producto']}" for i in reversed(df_inv.index)]
+        seleccion = st.selectbox("Borrar por ID:", opciones_del)
+        if st.button("ELIMINAR SELECCIONADO", use_container_width=True):
+            idx_borrar = int(seleccion.split(" - ")[0])
+            df_final = df_inv.drop(idx_borrar)
+            conn.update(worksheet="Inventario", data=df_final)
             st.cache_data.clear()
-            st.success("Eliminado correctamente")
-            time.sleep(1)
             st.rerun()
 
-# --- CÁLCULOS DE TABLA ---
+# --- CÁLCULOS ---
 df_inv["Disponible"] = df_inv["Cantidad"] - df_inv["Vendidos"]
 df_inv["Venta Total $"] = df_inv["Vendidos"] * df_inv["Precio Venta"]
 df_inv["Ganancia $"] = (df_inv["Precio Venta"] - df_inv["Precio MXN"]) * df_inv["Vendidos"]
 
-# --- VISUALIZACIÓN DE TABLA ---
-st.subheader("📊 Tabla de Inventario Actual")
+# --- TABLA (NUEVOS ARRIBA E IMAGEN AL FINAL) ---
+st.subheader("📊 Tabla de Inventario")
+
+# Invertimos el dataframe para que el último ID aparezca primero
+df_vista = df_inv.sort_index(ascending=False)
+
 edited_inv = st.data_editor(
-    df_inv,
+    df_vista,
     column_config={
-        "Imagen": st.column_config.ImageColumn("🖼️ FOTO"),
+        "ID": st.column_config.NumberColumn("ID", disabled=True),
         "Precio MXN": st.column_config.NumberColumn("COSTO", format="$%.2f"),
         "Precio Venta": st.column_config.NumberColumn("VENTA", format="$%.2f"),
         "Disponible": st.column_config.NumberColumn("STOCK", disabled=True),
         "Venta Total $": st.column_config.NumberColumn("TOTAL VENDIDO", format="$%.2f", disabled=True),
-        "Ganancia $": st.column_config.NumberColumn("GANANCIA", format="$%.2f", disabled=True)
+        "Ganancia $": st.column_config.NumberColumn("GANANCIA", format="$%.2f", disabled=True),
+        "Imagen": st.column_config.ImageColumn("🖼️ VISTA PREVIA") # Imagen al final
     },
     use_container_width=True,
     hide_index=True
 )
 
-if st.button("💾 GUARDAR CAMBIOS REALIZADOS EN TABLA"):
-    cols_s = ["Imagen", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos"]
-    conn.update(worksheet="Inventario", data=edited_inv[cols_s])
-    st.success("¡Base de datos de inventario actualizada!")
+if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
+    # Reordenar al índice original antes de guardar en Google Sheets
+    df_a_guardar = edited_inv.sort_index()
+    cols_s = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
+    conn.update(worksheet="Inventario", data=df_a_guardar[cols_s])
+    st.success("¡Sincronizado!")
     st.cache_data.clear()
-    time.sleep(1)
     st.rerun()
 
 # --- MÉTRICAS ---
 st.divider()
-st.subheader("📈 Resumen Ejecutivo")
 if not edited_inv.empty:
     m1, m2, m3, m4 = st.columns(4)
-    total_disponible = int(edited_inv['Disponible'].sum())
-    
-    m1.metric("📦 Stock en Bodega", f"{total_disponible} pzs")
-    m2.metric("💰 Ventas Totales", f"${edited_inv['Venta Total $'].sum():,.2f}")
-    m3.metric("💵 Ganancia Real", f"${edited_inv['Ganancia $'].sum():,.2f}")
-    m4.metric("🏗️ Inversión en Stock", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
+    m1.metric("📦 Stock", f"{int(edited_inv['Disponible'].sum())} pzs")
+    m2.metric("💰 Ventas", f"${edited_inv['Venta Total $'].sum():,.2f}")
+    m3.metric("💵 Ganancia", f"${edited_inv['Ganancia $'].sum():,.2f}")
+    m4.metric("🏗️ Bodega", f"${(edited_inv['Disponible'] * edited_inv['Precio MXN']).sum():,.2f}")
