@@ -172,4 +172,4 @@ preload_html = "".join([f'<img src="{pendientes.iloc[i].get("FOTO_URL","")}" cla
 st.markdown(preload_html, unsafe_allow_html=True)
 
 if st.button("🏠 Menú", use_container_width=True):
-    st.switch_page("app.py")
+    st.switch_page("app.py") 
