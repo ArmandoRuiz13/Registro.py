@@ -3,51 +3,54 @@ import pandas as pd
 import time
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURACIÓN PARA iPHONE 16 PRO ---
-st.set_page_config(page_title="Cobranza Pro", layout="centered")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Cobranza Express", layout="centered")
 
-# CSS Avanzado para Interfaz Móvil Premium
+# --- CSS PARA FORZAR BOTONES LATERALES Y DISEÑO MÓVIL ---
 st.markdown("""
     <style>
-    /* Ajuste para evitar el notch y la barra inferior del iPhone */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 5rem !important;
+    /* Forzar que las columnas de navegación no se apilen en móvil */
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 calc(33.33% - 1rem) !important;
+        min-width: 0px !important;
     }
     
-    /* Tarjeta contenedora */
-    .stColumn {
-        padding: 0px !important;
+    /* Contenedor de la fila de navegación */
+    [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+    }
+
+    .main-card {
+        background-color: #1e1e1e;
+        border-radius: 20px;
+        padding: 15px;
+        border: 1px solid #333;
     }
     
-    /* Imagen con proporción optimizada para 16 Pro */
+    .stButton button {
+        border-radius: 12px !important;
+        height: 3.5rem !important;
+        width: 100%;
+    }
+
     img {
-        border-radius: 24px;
-        object-fit: cover;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        border-radius: 15px;
+        margin-bottom: 10px;
+        max-height: 300px;
+        object-fit: contain;
+    }
+
+    .status-badge {
+        text-align: center;
+        font-weight: bold;
+        padding: 8px;
+        border-radius: 10px;
         margin-bottom: 10px;
     }
-
-    /* Botones de navegación laterales */
-    .nav-btn button {
-        background-color: #262626 !important;
-        border: 1px solid #404040 !important;
-        border-radius: 50% !important;
-        width: 50px !important;
-        height: 50px !important;
-    }
-
-    /* Botón de pago principal */
-    div[data-testid="stPopover"] > button {
-        background-color: #007AFF !important; /* Azul iOS */
-        color: white !important;
-        border-radius: 14px !important;
-        height: 3.5rem !important;
-        font-weight: bold !important;
-    }
-
-    /* Ocultar elementos innecesarios en móvil */
-    #MainMenu, footer, header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,18 +64,17 @@ def leer_datos():
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception:
-        st.error("Error de conexión con la sábana de datos.")
+        st.error("⚠️ Error de conexión.")
         st.stop()
 
-# --- PROCESAMIENTO ---
+# --- LÓGICA DE DATOS ---
 df_nube = leer_datos()
-# Filtramos solo lo pendiente (Debe o Abonado)
 pendientes = df_nube[df_nube["ESTADO_PAGO"].isin(["🔴 Debe", "🟡 Abonado"])].copy()
 
 if pendientes.empty:
     st.balloons()
-    st.success("¡Todo cobrado! ✨")
-    if st.button("Regresar al Menú"): st.switch_page("app.py")
+    st.success("¡Todo cobrado! 🍻")
+    if st.button("🏠 Volver al Menú"): st.switch_page("app.py")
     st.stop()
 
 if 'idx_c' not in st.session_state: st.session_state.idx_c = 0
@@ -81,62 +83,60 @@ if st.session_state.idx_c >= len(pendientes): st.session_state.idx_c = 0
 reg = pendientes.iloc[st.session_state.idx_c]
 idx_original = reg.name
 
-# --- INTERFAZ DINÁMICA ---
+# --- INTERFAZ ---
 
-# 1. Estatus (Header minimalista)
+# 1. Estatus
 color_st = "#FFCC00" if reg['ESTADO_PAGO'] == "🟡 Abonado" else "#FF4B4B"
 st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <span style="background: {color_st}33; color: {color_st}; padding: 4px 12px; border-radius: 20px; font-weight: bold; border: 1px solid {color_st};">
-            {reg['ESTADO_PAGO']}
-        </span>
-        <span style="color: #888;">{st.session_state.idx_c + 1} de {len(pendientes)}</span>
+    <div class="status-badge" style="background-color: {color_st}22; border: 1px solid {color_st}; color: {color_st};">
+        {reg['ESTADO_PAGO']}
     </div>
     """, unsafe_allow_html=True)
 
-# 2. Área Visual
+if reg['ESTADO_PAGO'] == "🟡 Abonado":
+    st.write(f"💰 **Abono previo:** ${float(reg['MONTO_RECIBIDO']):,.2f}")
+
+# 2. Imagen y Datos
 if reg.get("FOTO_URL") and str(reg["FOTO_URL"]) != "nan":
     st.image(reg["FOTO_URL"], use_container_width=True)
 
-# 3. Información del Producto
-if reg['ESTADO_PAGO'] == "🟡 Abonado":
-    st.caption(f"💰 Ya abonó: ${float(reg['MONTO_RECIBIDO']):,.2f}")
+cliente_display = reg['CLIENTE'] if str(reg['CLIENTE']) != "nan" else "Sin nombre"
+st.markdown(f"### {reg['PRODUCTO']}")
+st.markdown(f"👤 **Cliente:** {cliente_display}")
+st.markdown(f"<h2 style='color:#00FFAA; margin-top:0;'>${float(reg['VENTA_MXN']):,.2f}</h2>", unsafe_allow_html=True)
 
-st.subheader(reg['PRODUCTO'])
-cliente = reg['CLIENTE'] if str(reg['CLIENTE']) != "nan" else "Cliente General"
-st.markdown(f"👤 **{cliente}**")
-st.markdown(f"<h1 style='margin:0; color: #FFFFFF;'>${float(reg['VENTA_MXN']):,.2f}</h1>", unsafe_allow_html=True)
-
-st.write("")
-
-# 4. Acción de Cobro (Con Popover de confirmación para evitar errores)
-with st.popover("确认 ✅ PAGAR TOTAL", use_container_width=True):
-    st.markdown("### ¿Recibiste el pago total?")
-    st.write("Esta acción marcará el producto como pagado y actualizará el monto recibido.")
+# 3. Botón de Cobro con Confirmación (Popover)
+with st.popover("✅ MARCAR COMO PAGADO", use_container_width=True):
+    st.warning("¿Confirmas el pago total?")
     if st.button("SÍ, CONFIRMAR", type="primary", use_container_width=True):
         df_nube.at[idx_original, "ESTADO_PAGO"] = "🟢 Pagado"
         df_nube.at[idx_original, "MONTO_RECIBIDO"] = reg["VENTA_MXN"]
         conn.update(data=df_nube)
-        st.toast("Actualizando...")
+        st.toast("✅ ¡Actualizado!")
         time.sleep(1)
         st.cache_data.clear()
         st.rerun()
 
-st.write("")
+st.write("") 
 
-# 5. Navegación Inferior (Diseño de flechas laterales separadas)
-nav_col1, nav_col2, nav_col3 = st.columns([1, 0.5, 1])
+# 4. NAVEGACIÓN (FORZADA EN UNA FILA)
+# Usamos columnas pero el CSS de arriba evita que se apilen
+col_nav_izq, col_nav_txt, col_nav_der = st.columns([1, 1.5, 1])
 
-with nav_col1:
-    if st.button("⬅️", use_container_width=True, key="prev"):
+with col_nav_izq:
+    if st.button("⬅️"):
         st.session_state.idx_c = max(0, st.session_state.idx_c - 1)
         st.rerun()
 
-with nav_col3:
-    if st.button("➡️", use_container_width=True, key="next"):
+with col_nav_txt:
+    # Centramos el texto verticalmente para que alinee con los botones
+    st.markdown(f"<p style='text-align:center; font-weight:bold; margin-top:15px;'>{st.session_state.idx_c + 1} / {len(pendientes)}</p>", unsafe_allow_html=True)
+
+with col_nav_der:
+    if st.button("➡️"):
         st.session_state.idx_c = min(len(pendientes)-1, st.session_state.idx_c + 1)
         st.rerun()
 
-st.markdown("---")
-if st.button("🏠 Inicio", use_container_width=True):
+st.divider()
+if st.button("🏠 Menú Principal", use_container_width=True):
     st.switch_page("app.py")
