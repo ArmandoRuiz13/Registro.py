@@ -67,8 +67,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def leer_datos():
     try:
-        # Usamos un cache pequeño para evitar colapsar la API en avances rápidos
-        df = conn.read(ttl="1m") 
+        # TTL de 10 segundos para balancear frescura y velocidad de navegación
+        df = conn.read(ttl=10) 
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except:
@@ -81,11 +81,10 @@ pendientes = df_nube[df_nube["ESTADO_PAGO"].isin(["🔴 Debe", "🟡 Abonado"])]
 
 if pendientes.empty:
     st.success("¡Todo cobrado! ✨")
+    if st.button("🏠 Inicio"): st.switch_page("app.py")
     st.stop()
 
-# Inicialización segura del estado
 if 'idx_c' not in st.session_state: st.session_state.idx_c = 0
-# Corrección de índice fuera de rango (evita que el programa rompa si se filtran datos)
 if st.session_state.idx_c >= len(pendientes): st.session_state.idx_c = 0
 
 reg = pendientes.iloc[st.session_state.idx_c]
@@ -93,32 +92,32 @@ idx_original = reg.name
 
 # --- INTERFAZ ---
 
-# 1. Imagen + Estatus Flotante
+# 1. Imagen + Estatus Flotante con KEY ROTATION
 color_st = "#FFCC00" if reg['ESTADO_PAGO'] == "🟡 Abonado" else "#FF4B4B"
 label_st = "ABONADO" if "Abonado" in reg['ESTADO_PAGO'] else "DEBE"
 foto_url = reg.get("FOTO_URL", "")
 url_f = foto_url if str(foto_url) != "nan" and str(foto_url) != "" else "https://via.placeholder.com/400x300?text=Sin+Foto"
 
+# La "key" dinámica obliga a refrescar la imagen correctamente en el salto de página
 st.markdown(f"""
-    <div class="img-wrapper">
+    <div class="img-wrapper" key="wrapper_{st.session_state.idx_c}">
         <div class="floating-status" style="background: {color_st}; color: black;">{label_st}</div>
-        <img src="{url_f}">
+        <img src="{url_f}?v={st.session_state.idx_c}">
     </div>
     """, unsafe_allow_html=True)
 
-# 2. Navegación con Protección (Debounce)
+# 2. Navegación con Bloqueo de Colapso
 c1, c2, c3 = st.columns([1, 0.8, 1])
 
 def cambiar_indice(delta):
-    """Función para manejar el cambio de índice de forma controlada"""
-    with st.spinner(''): # Bloqueo visual ligero
-        st.session_state.idx_c = (st.session_state.idx_c + delta) % len(pendientes)
-        time.sleep(0.1) # Pequeña pausa para estabilizar el estado antes del rerun
-        st.rerun()
+    nueva_pos = (st.session_state.idx_c + delta) % len(pendientes)
+    st.session_state.idx_c = nueva_pos
+    time.sleep(0.05) # Pausa mínima técnica
+    st.rerun()
 
 with c1:
     st.markdown('<div class="nav-col">', unsafe_allow_html=True)
-    if st.button("❮", key="btn_prev", use_container_width=True):
+    if st.button("❮", key=f"prev_{st.session_state.idx_c}", use_container_width=True):
         cambiar_indice(-1)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -127,7 +126,7 @@ with c2:
 
 with c3:
     st.markdown('<div class="nav-col">', unsafe_allow_html=True)
-    if st.button("❯", key="btn_next", use_container_width=True):
+    if st.button("❯", key=f"next_{st.session_state.idx_c}", use_container_width=True):
         cambiar_indice(1)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -144,7 +143,7 @@ else:
 
 # 4. Acción de Pago
 with st.popover("✅ PAGAR TODO", use_container_width=True):
-    if st.button("CONFIRMAR PAGO", type="primary", use_container_width=True):
+    if st.button("CONFIRMAR PAGO", type="primary", use_container_width=True, key=f"pay_{idx_original}"):
         df_nube.at[idx_original, "ESTADO_PAGO"] = "🟢 Pagado"
         df_nube.at[idx_original, "MONTO_RECIBIDO"] = reg["VENTA_MXN"]
         conn.update(data=df_nube)
@@ -153,13 +152,18 @@ with st.popover("✅ PAGAR TODO", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# --- PRECARGA INTELIGENTE ---
-# Solo precargamos si hay más de un registro para no duplicar peticiones
-if len(pendientes) > 1:
-    next_idx = (st.session_state.idx_c + 1) % len(pendientes)
-    next_url = pendientes.iloc[next_idx].get("FOTO_URL", "")
-    if str(next_url) != "nan" and next_url != "":
-        st.markdown(f'<img src="{next_url}" class="preload-img">', unsafe_allow_html=True)
+# --- PRECARGA MÁS INTELIGENTE ---
+# Precargamos tanto la anterior como la siguiente para saltos rápidos en ambos sentidos
+preload_indices = [
+    (st.session_state.idx_c - 1) % len(pendientes),
+    (st.session_state.idx_c + 1) % len(pendientes)
+]
+preload_html = ""
+for i in preload_indices:
+    url = pendientes.iloc[i].get("FOTO_URL", "")
+    if str(url) != "nan" and url != "":
+        preload_html += f'<img src="{url}" class="preload-img">'
+st.markdown(preload_html, unsafe_allow_html=True)
 
 if st.button("🏠 Menú", use_container_width=True):
     st.switch_page("app.py")
