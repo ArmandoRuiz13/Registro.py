@@ -39,8 +39,8 @@ def subir_a_nube(archivo_imagen):
 
 # --- NAVEGACIÓN ---
 with st.sidebar:
-    if st.button("📦 IR A INVENTARIO", use_container_width=True):
-        st.switch_page("pages/Inventario.py")
+    if st.button("📱 Modo Telefono", use_container_width=True):
+        st.switch_page("pages/Cobranza_Movil.py")
     st.divider()
 
 st.title("🚀 Control de Ventas (Cloudinary Edition)")
