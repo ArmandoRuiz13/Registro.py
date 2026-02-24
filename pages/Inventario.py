@@ -39,7 +39,8 @@ st.title("📦 Gestión de Inventario y Stock")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def lectura_inventario():
-    columnas_base = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
+    # SE AGREGA "Pagado Venta" a la estructura base
+    columnas_base = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Pagado Venta", "Imagen"]
     try: 
         df = conn.read(worksheet="Inventario", ttl=0)
         if df is None or df.empty:
@@ -49,8 +50,14 @@ def lectura_inventario():
         
         for col in columnas_base:
             if col not in df.columns:
-                df[col] = 0 if col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"] else ""
+                # Si es la de pagado, inicializa como False (Check vacío)
+                if col == "Pagado Venta":
+                    df[col] = False
+                else:
+                    df[col] = 0 if col in ["Precio MXN", "Precio Venta", "Cantidad", "Vendidos"] else ""
         
+        # Aseguramos que sea booleano para que Streamlit pinte el checkbox
+        df["Pagado Venta"] = df["Pagado Venta"].fillna(False).astype(bool)
         return df[columnas_base]
     except Exception:
         return pd.DataFrame(columns=columnas_base)
@@ -89,6 +96,7 @@ with st.sidebar:
             f_cantidad_txt = st.text_input("Stock Inicial")
 
         f_vendidos_txt = st.text_input("Ventas realizadas", value="0")
+        f_pagado = st.checkbox("¿Pagado?") # NUEVO CAMPO EN FORMULARIO
         
         def limpiar_num(val):
             try: return float(str(val).replace(',', '').replace('$', '')) if val != "" else 0.0
@@ -108,6 +116,7 @@ with st.sidebar:
                         "Talla": f_talla_final, 
                         "Cantidad": limpiar_num(f_cantidad_txt), 
                         "Vendidos": limpiar_num(f_vendidos_txt),
+                        "Pagado Venta": f_pagado, # NUEVO
                         "Imagen": url_foto
                     }])
                     
@@ -120,7 +129,7 @@ with st.sidebar:
                     time.sleep(1)
                     st.rerun()
 
-    # --- BORRADO CON CONFIRMACIÓN ---
+    # --- BORRADO CON CONFIRMACIÓN (RESTAURADO) ---
     st.divider()
     if not df_inv.empty:
         opciones_del = [f"{i} - {df_inv.loc[i, 'Producto']}" for i in reversed(df_inv.index)]
@@ -135,7 +144,9 @@ with st.sidebar:
             if c1.button("SÍ, ELIMINAR", use_container_width=True):
                 idx_borrar = int(seleccion.split(" - ")[0])
                 df_final = df_inv.drop(idx_borrar)
-                conn.update(worksheet="Inventario", data=df_final)
+                # Al borrar, nos aseguramos de no enviar las columnas calculadas
+                cols_limpias = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Pagado Venta", "Imagen"]
+                conn.update(worksheet="Inventario", data=df_final[cols_limpias])
                 st.session_state.confirmar_borrado_inv = False
                 st.cache_data.clear()
                 st.rerun()
@@ -149,9 +160,9 @@ df_inv["Venta Total $"] = df_inv["Vendidos"] * df_inv["Precio Venta"]
 df_inv["Ganancia $"] = (df_inv["Precio Venta"] - df_inv["Precio MXN"]) * df_inv["Vendidos"]
 df_inv["ID"] = df_inv.index
 
-# ORDEN: ID al inicio, Cálculos en medio e Imagen al final
+# ORDEN: Se incluye Pagado Venta en la vista
 cols_vista = ["ID", "Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", 
-              "Cantidad", "Vendidos", "Disponible", "Venta Total $", "Ganancia $", "Imagen"]
+              "Cantidad", "Vendidos", "Pagado Venta", "Disponible", "Venta Total $", "Ganancia $", "Imagen"]
 
 # --- TABLA ---
 st.subheader("📊 Tabla de Inventario")
@@ -161,6 +172,7 @@ edited_inv = st.data_editor(
     df_vista,
     column_config={
         "ID": st.column_config.NumberColumn("ID", disabled=True),
+        "Pagado Venta": st.column_config.CheckboxColumn("PAGADO?"), # NUEVO
         "Precio MXN": st.column_config.NumberColumn("COSTO", format="$%.2f"),
         "Precio Venta": st.column_config.NumberColumn("VENTA", format="$%.2f"),
         "Disponible": st.column_config.NumberColumn("STOCK", disabled=True),
@@ -173,7 +185,8 @@ edited_inv = st.data_editor(
 )
 
 if st.button("💾 GUARDAR CAMBIOS DE TABLA"):
-    cols_a_guardar = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Imagen"]
+    # Guardamos incluyendo la nueva columna Pagado Venta
+    cols_a_guardar = ["Producto", "Tienda", "Precio MXN", "Precio Venta", "Color", "Talla", "Cantidad", "Vendidos", "Pagado Venta", "Imagen"]
     df_sincronizar = edited_inv.sort_index()[cols_a_guardar]
     conn.update(worksheet="Inventario", data=df_sincronizar)
     st.success("¡Sincronizado!")
