@@ -6,59 +6,53 @@ from streamlit_gsheets import GSheetsConnection
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cobranza Flash", layout="centered")
 
-# --- CSS PARA BOTONES SOBRE IMAGEN Y DISEÑO COMPACTO ---
+# --- CSS PARA BOTONES MODERNOS Y DISEÑO COMPACTO ---
 st.markdown("""
     <style>
-    /* Contenedor relativo para la imagen y botones */
-    .img-container {
-        position: relative;
-        width: 100%;
-        max-width: 400px;
-        margin: 0 auto;
-    }
-
-    /* Imagen compacta */
-    .img-container img {
-        width: 100%;
-        border-radius: 15px;
-        max-height: 320px;
-        object-fit: cover;
-    }
-
-    /* Botones flotantes sutiles */
-    .float-btn {
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        background-color: rgba(255, 255, 255, 0.15); /* Muy sutil */
-        border: none;
-        color: white;
-        padding: 15px 10px;
-        border-radius: 10px;
-        cursor: pointer;
-        font-size: 20px;
-        transition: 0.3s;
-        backdrop-filter: blur(2px);
-    }
-    
-    .float-btn:hover { background-color: rgba(255, 255, 255, 0.3); }
-    .btn-prev { left: 10px; }
-    .btn-next { right: 10px; }
-
-    /* Textos pequeños */
-    h2, h3 { margin-bottom: 0 !important; font-size: 1.2rem !important; }
-    p { font-size: 0.9rem !important; margin-bottom: 5px !important; }
-    
-    /* Popover más discreto */
-    .stPopover button {
-        width: 100% !important;
+    /* Botones de navegación tipo 'pill' (cápsula) */
+    .stButton button {
+        border-radius: 25px !important;
         height: 2.8rem !important;
-        font-size: 14px !important;
+        border: 1px solid #444 !important;
+        background-color: #262730 !important;
+        color: white !important;
+        font-size: 16px !important;
+        transition: 0.2s;
+        width: 100%;
+    }
+    
+    .stButton button:active {
+        background-color: #555 !important;
+        transform: scale(0.95);
+    }
+
+    /* Imagen redondeada y compacta */
+    img {
+        border-radius: 12px;
+        max-height: 280px;
+        object-fit: contain;
+        margin-bottom: 2px;
+    }
+
+    /* Estilo para los textos reducidos */
+    .prod-title { font-size: 1rem; font-weight: bold; margin-bottom: 0px; text-align: center; }
+    .client-text { color: #888; font-size: 0.85rem; margin-bottom: 2px; text-align: center; }
+    .price-text { color: #00FFAA; font-size: 1.4rem; font-weight: bold; margin-top: 0px; text-align: center; }
+    
+    /* Ajuste de contenedor principal */
+    .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+    
+    /* Popover compacto */
+    .stPopover button {
+        border-radius: 10px !important;
+        height: 3rem !important;
+        background-color: #FF4B4B11 !important;
+        border: 1px solid #FF4B4B !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN (Mantenida del código anterior) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def leer_datos():
@@ -68,18 +62,21 @@ def leer_datos():
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception:
-        st.error("Error de conexión.")
+        st.error("Error de conexión con Sheets.")
         st.stop()
 
 # --- LÓGICA DE DATOS ---
 df_nube = leer_datos()
+# Filtramos solo lo que está pendiente de pago
 pendientes = df_nube[df_nube["ESTADO_PAGO"].isin(["🔴 Debe", "🟡 Abonado"])].copy()
 
 if pendientes.empty:
+    st.balloons()
     st.success("¡Todo cobrado! ✨")
-    if st.button("🏠 Menú"): st.switch_page("app.py")
+    if st.button("🏠 Inicio"): st.switch_page("app.py")
     st.stop()
 
+# Manejo de posición en el carrusel
 if 'idx_c' not in st.session_state: st.session_state.idx_c = 0
 if st.session_state.idx_c >= len(pendientes): st.session_state.idx_c = 0
 
@@ -88,57 +85,49 @@ idx_original = reg.name
 
 # --- INTERFAZ ---
 
-# 1. Estatus (Pequeño arriba)
+# 1. Estatus (Texto pequeño arriba)
 color_st = "#FFCC00" if reg['ESTADO_PAGO'] == "🟡 Abonado" else "#FF4B4B"
-st.markdown(f"<div style='color:{color_st}; font-weight:bold; text-align:center; font-size:14px;'>{reg['ESTADO_PAGO']}</div>", unsafe_allow_html=True)
+st.markdown(f"<p style='color:{color_st}; font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 5px; letter-spacing: 1px;'>{reg['ESTADO_PAGO'].upper()}</p>", unsafe_allow_html=True)
 
-# 2. Imagen con Botones de Navegación "Invisibles/Sutiles"
-# Usamos columnas de Streamlit para los botones que activan el cambio de índice
-# pero el diseño visual lo da el usuario al tocar los lados de la imagen.
+# 2. Imagen
+foto_url = reg.get("FOTO_URL", "")
+st.image(foto_url if str(foto_url) != "nan" else "https://via.placeholder.com/400x300?text=Sin+Foto", use_container_width=True)
 
-with st.container():
-    # Simulamos los botones sobre la imagen con columnas muy pegadas
-    # En Streamlit puro, lo más efectivo es poner los botones justo arriba o abajo 
-    # pero los hemos estilizado para que parezcan parte de la acción.
-    
-    foto_url = reg.get("FOTO_URL", "")
-    st.image(foto_url if str(foto_url) != "nan" else "https://via.placeholder.com/400x300?text=Sin+Foto", use_container_width=True)
+# 3. NAVEGACIÓN (Botones bonitos justo debajo de la imagen)
+c1, c2, c3 = st.columns([1, 1.2, 1])
+with c1:
+    if st.button("⬅️"):
+        st.session_state.idx_c = (st.session_state.idx_c - 1) % len(pendientes)
+        st.rerun()
+with c2:
+    st.markdown(f"<p style='text-align:center; font-size: 13px; margin-top: 8px; color: #666;'>{st.session_state.idx_c + 1} / {len(pendientes)}</p>", unsafe_allow_html=True)
+with c3:
+    if st.button("➡️"):
+        st.session_state.idx_c = (st.session_state.idx_c + 1) % len(pendientes)
+        st.rerun()
 
-    # Navegación inmediata debajo de la foto (Flechas pequeñas)
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c1:
-        if st.button("⬅️", use_container_width=True, key="prev"):
-            st.session_state.idx_c = (st.session_state.idx_c - 1) % len(pendientes)
-            st.rerun()
-    with c2:
-        st.markdown(f"<p style='text-align:center;'>{st.session_state.idx_c + 1} / {len(pendientes)}</p>", unsafe_allow_html=True)
-    with c3:
-        if st.button("➡️", use_container_width=True, key="next"):
-            st.session_state.idx_c = (st.session_state.idx_c + 1) % len(pendientes)
-            st.rerun()
-
-# 3. Datos del Producto (Compactos)
-cliente_display = reg['CLIENTE'] if str(reg['CLIENTE']) != "nan" else "N/A"
-st.markdown(f"**{reg['PRODUCTO']}**")
-st.markdown(f"<p style='color:gray;'>👤 {cliente_display}</p>", unsafe_allow_html=True)
+# 4. Información del producto (Centrada y compacta)
+cliente_display = reg['CLIENTE'] if str(reg['CLIENTE']) != "nan" else "S/N"
+st.markdown(f"<p class='prod-title'>{reg['PRODUCTO']}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='client-text'>👤 {cliente_display}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='price-text'>${float(reg['VENTA_MXN']):,.2f}</p>", unsafe_allow_html=True)
 
 if reg['ESTADO_PAGO'] == "🟡 Abonado":
-    st.markdown(f"<p style='color:#FFCC00; font-size:12px;'>Abonado: ${float(reg['MONTO_RECIBIDO']):,.2f}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='color:#FFCC00; text-align:center; font-size:11px; margin-top:-10px;'>Abono actual: ${float(reg['MONTO_RECIBIDO']):,.2f}</p>", unsafe_allow_html=True)
 
-st.markdown(f"<h2 style='color:#00FFAA;'>${float(reg['VENTA_MXN']):,.2f}</h2>", unsafe_allow_html=True)
-
-# 4. Botón de Cobro
-with st.popover("✅ PAGAR", use_container_width=True):
-    st.write("¿Confirmas pago total?")
-    if st.button("CONFIRMAR", type="primary", use_container_width=True):
+# 5. Botón de Cobro y Menú
+st.write("")
+with st.popover("✅ MARCAR PAGADO", use_container_width=True):
+    st.markdown("<p style='text-align:center; font-size:14px;'>¿Confirmas el pago total?</p>", unsafe_allow_html=True)
+    if st.button("SÍ, CONFIRMAR", type="primary", use_container_width=True):
+        # Actualizamos en el DF original usando el índice guardado
         df_nube.at[idx_original, "ESTADO_PAGO"] = "🟢 Pagado"
         df_nube.at[idx_original, "MONTO_RECIBIDO"] = reg["VENTA_MXN"]
         conn.update(data=df_nube)
-        st.toast("Actualizado")
+        st.toast("✅ Pago registrado")
         time.sleep(0.5)
         st.cache_data.clear()
         st.rerun()
 
-st.write("")
-if st.button("🏠 Inicio", use_container_width=True):
+if st.button("🏠 Menú Principal", use_container_width=True):
     st.switch_page("app.py")
