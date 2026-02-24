@@ -6,60 +6,60 @@ from streamlit_gsheets import GSheetsConnection
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cobranza Flash", layout="centered")
 
-# --- CSS PARA DISEÑO MODERNO Y BOTONES ALARGADOS ---
+# --- CSS MEJORADO (DISEÑO FIJO Y COMPACTO) ---
 st.markdown("""
     <style>
-    /* Estilo general de botones */
-    .stButton button {
-        border-radius: 20px !important;
-        height: 3rem !important;
-        width: 100% !important;
-        transition: 0.2s;
-        font-weight: 600 !important;
+    /* Contenedor principal sin tanto margen */
+    .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+    
+    /* Imagen con tamaño fijo para que no mueva el contenido */
+    .img-container {
+        display: flex;
+        justify-content: center;
+        background-color: #111;
+        border-radius: 15px;
+        overflow: hidden;
+        height: 220px; /* Tamaño fijo */
+        margin-bottom: 10px;
+    }
+    .img-container img {
+        height: 100%;
+        object-fit: contain;
     }
 
-    /* Botones de navegación (Anterior/Siguiente) */
-    div[data-testid="stColumn"] .stButton button {
-        background-color: #1E1E1E !important;
+    /* Estilo de los botones de navegación */
+    .nav-btn button {
+        background-color: #262730 !important;
         border: 1px solid #444 !important;
+        color: #ddd !important;
+        border-radius: 12px !important;
+        height: 3.5rem !important;
+        font-weight: bold !important;
+    }
+    
+    .nav-btn button:hover {
+        border-color: #00FFAA !important;
         color: white !important;
     }
 
-    /* Imagen redondeada y responsiva */
-    img {
-        border-radius: 15px;
-        max-height: 300px;
-        object-fit: cover;
-        margin-bottom: 5px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.3);
-    }
-
-    /* Textos informativos */
-    .prod-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 0px; text-align: center; color: white; }
-    .client-text { color: #AAAAAA; font-size: 0.9rem; margin-bottom: 2px; text-align: center; }
-    .price-text { color: #00FFAA; font-size: 1.6rem; font-weight: bold; margin-top: 0px; text-align: center; }
+    /* Textos compactos */
+    .status-text { font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 5px; letter-spacing: 2px; }
+    .prod-title { font-size: 1.1rem; font-weight: bold; text-align: center; margin: 0; }
+    .client-text { color: #888; font-size: 0.85rem; text-align: center; margin-bottom: 5px; }
+    .price-text { color: #00FFAA; font-size: 1.5rem; font-weight: bold; text-align: center; margin: 0; }
     
-    /* Contador centralizado */
-    .contador-text {
+    /* Contador central */
+    .contador {
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 3rem;
-        font-size: 14px;
-        color: #888;
-        font-weight: bold;
+        color: #666;
+        font-size: 0.9rem;
+        height: 3.5rem;
     }
 
-    /* Ajuste de contenedor principal */
-    .block-container { padding-top: 1.5rem !important; padding-bottom: 1rem !important; }
-    
-    /* Popover (Botón de Pago) */
-    .stPopover button {
-        border-radius: 12px !important;
-        background-color: #FF4B4B11 !important;
-        border: 1px solid #FF4B4B !important;
-        color: #FF4B4B !important;
-    }
+    /* Precarga invisible */
+    .preload { display: none; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,7 +73,7 @@ def leer_datos():
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception:
-        st.error("Error de conexión con Sheets.")
+        st.error("Error de conexión.")
         st.stop()
 
 # --- LÓGICA DE DATOS ---
@@ -81,12 +81,10 @@ df_nube = leer_datos()
 pendientes = df_nube[df_nube["ESTADO_PAGO"].isin(["🔴 Debe", "🟡 Abonado"])].copy()
 
 if pendientes.empty:
-    st.balloons()
     st.success("¡Todo cobrado! ✨")
     if st.button("🏠 Inicio"): st.switch_page("app.py")
     st.stop()
 
-# Manejo de posición
 if 'idx_c' not in st.session_state: st.session_state.idx_c = 0
 if st.session_state.idx_c >= len(pendientes): st.session_state.idx_c = 0
 
@@ -95,52 +93,64 @@ idx_original = reg.name
 
 # --- INTERFAZ ---
 
-# 1. Estatus visual
+# 1. Estatus (Fijo arriba)
 color_st = "#FFCC00" if reg['ESTADO_PAGO'] == "🟡 Abonado" else "#FF4B4B"
-st.markdown(f"<p style='color:{color_st}; font-size: 12px; font-weight: bold; text-align: center; margin-bottom: 8px; letter-spacing: 2px;'>{reg['ESTADO_PAGO'].upper()}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='status-text' style='color:{color_st};'>{reg['ESTADO_PAGO'].upper()}</p>", unsafe_allow_html=True)
 
-# 2. Imagen
+# 2. Imagen (Con tamaño controlado)
 foto_url = reg.get("FOTO_URL", "")
-st.image(foto_url if str(foto_url) != "nan" else "https://via.placeholder.com/400x300?text=Sin+Foto", use_container_width=True)
+url_final = foto_url if str(foto_url) != "nan" else "https://via.placeholder.com/400x300?text=Sin+Foto"
+st.markdown(f"<div class='img-container'><img src='{url_final}'></div>", unsafe_allow_html=True)
 
-# 3. NAVEGACIÓN (Botones centrados y alargados)
-# Usamos una proporción [1.5, 1, 1.5] para que los botones crezcan hacia el centro
+# 3. Navegación (Botones largos y elegantes)
 c1, c2, c3 = st.columns([1.5, 1, 1.5])
-
 with c1:
-    if st.button("⬅️ Ant.", key="prev", use_container_width=True):
+    st.markdown('<div class="nav-btn">', unsafe_allow_html=True)
+    if st.button("⬅️ Ant.", use_container_width=True):
         st.session_state.idx_c = (st.session_state.idx_c - 1) % len(pendientes)
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with c2:
-    st.markdown(f"<div class='contador-text'>{st.session_state.idx_c + 1} / {len(pendientes)}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='contador'>{st.session_state.idx_c + 1} / {len(pendientes)}</div>", unsafe_allow_html=True)
 
 with c3:
-    if st.button("Sig. ➡️", key="next", use_container_width=True):
+    st.markdown('<div class="nav-btn">', unsafe_allow_html=True)
+    if st.button("Sig. ➡️", use_container_width=True):
         st.session_state.idx_c = (st.session_state.idx_c + 1) % len(pendientes)
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# 4. Información del producto
-cliente_display = reg['CLIENTE'] if str(reg['CLIENTE']) != "nan" else "Sin Nombre"
+# 4. Info Producto
 st.markdown(f"<p class='prod-title'>{reg['PRODUCTO']}</p>", unsafe_allow_html=True)
-st.markdown(f"<p class='client-text'>👤 {cliente_display}</p>", unsafe_allow_html=True)
+st.markdown(f"<p class='client-text'>👤 {reg['CLIENTE'] if str(reg['CLIENTE']) != 'nan' else 'S/N'}</p>", unsafe_allow_html=True)
 st.markdown(f"<p class='price-text'>${float(reg['VENTA_MXN']):,.2f}</p>", unsafe_allow_html=True)
 
-if reg['ESTADO_PAGO'] == "🟡 Abonado":
-    st.markdown(f"<p style='color:#FFCC00; text-align:center; font-size:12px; margin-top:-10px;'>Abono actual: ${float(reg['MONTO_RECIBIDO']):,.2f}</p>", unsafe_allow_html=True)
-
-# 5. Acciones Finales
-st.markdown("---")
-with st.popover("✅ MARCAR COMO PAGADO", use_container_width=True):
-    st.markdown("<p style='text-align:center;'>¿Confirmas el pago total de este artículo?</p>", unsafe_allow_html=True)
-    if st.button("SÍ, CONFIRMAR PAGO", type="primary", use_container_width=True):
+# 5. Botón de Cobro
+st.write("")
+with st.popover("✅ REGISTRAR PAGO", use_container_width=True):
+    if st.button("CONFIRMAR PAGO TOTAL", type="primary", use_container_width=True):
         df_nube.at[idx_original, "ESTADO_PAGO"] = "🟢 Pagado"
         df_nube.at[idx_original, "MONTO_RECIBIDO"] = reg["VENTA_MXN"]
         conn.update(data=df_nube)
-        st.toast("Pago registrado correctamente")
-        time.sleep(0.6)
+        st.toast("¡Pagado!")
+        time.sleep(0.5)
         st.cache_data.clear()
         st.rerun()
 
-if st.button("🏠 Volver al Menú Principal", use_container_width=True):
+# 6. Precarga de imágenes (Truco de velocidad)
+# Cargamos la imagen anterior y las 2 siguientes de forma invisible
+pre_indices = [(st.session_state.idx_c - 1) % len(pendientes), 
+               (st.session_state.idx_c + 1) % len(pendientes),
+               (st.session_state.idx_c + 2) % len(pendientes)]
+
+preload_html = ""
+for i in pre_indices:
+    url = pendientes.iloc[i].get("FOTO_URL", "")
+    if str(url) != "nan":
+        preload_html += f"<img src='{url}' class='preload'>"
+
+st.markdown(preload_html, unsafe_allow_html=True)
+
+if st.button("🏠 Menú", use_container_width=True):
     st.switch_page("app.py")
