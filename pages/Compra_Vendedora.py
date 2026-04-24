@@ -18,18 +18,27 @@ st.markdown("""
     <style>
     [data-testid="stImage"] img {
         max-height: 300px;
-        object-fit: contain; /* Ajusta la imagen sin recortarla */
+        object-fit: contain;
         border-radius: 10px;
-        background-color: #f0f0f0; /* Fondo gris claro para rellenar espacios si la foto es chica */
+        background-color: #f0f0f0;
     }
     .stButton button {
         border-radius: 12px;
     }
+    .badge {
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 0.8em;
+        font-weight: bold;
+        margin-right: 5px;
+    }
+    .badge-pnd { background-color: #ffe0b2; color: #fb8c00; }
+    .badge-ok { background-color: #c8e6c9; color: #2e7d32; }
     .warning-box {
         color: #d32f2f;
         font-weight: bold;
         border: 1px solid #ffcdd2;
-        padding: 10px;
+        padding: 15px;
         border-radius: 8px;
         background-color: #ffebee;
         text-align: center;
@@ -106,7 +115,7 @@ with nav_c2:
 st.divider()
 
 # ---------------------------------------------------------
-# MODO GESTIÓN (REGISTRO + TABLA)
+# MODO GESTIÓN
 # ---------------------------------------------------------
 if not st.session_state.view_mode:
     with st.expander("🚀 NUEVO REGISTRO", expanded=True):
@@ -165,32 +174,34 @@ if not st.session_state.view_mode:
             st.success("¡Actualizado!")
             st.rerun()
 
-        # --- ZONA DE BORRADO ---
-        with st.expander("🗑️ ZONA DE PELIGRO (Eliminar)"):
+        with st.expander("🗑️ ZONA DE PELIGRO"):
             id_del = st.selectbox("ID a eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
-            nombre_p = df_cv[df_cv["ID"] == id_del]["Producto"].values
-            
+            nombre_p = df_cv[df_cv["ID"] == id_del]["Producto"].iloc
             with st.popover(f"🗑️ ELIMINAR ID {int(id_del)}", use_container_width=True):
-                st.markdown(f"""
-                    <div class="warning-box">
-                    ¿Seguro deseas eliminar este registro?<br>
-                    <strong>{nombre_p}</strong>
-                    </div>
-                """, unsafe_allow_html=True)
-                if st.button("SÍ, ELIMINAR AHORA", type="primary", use_container_width=True, key="del_final_list"):
-                    idx_real = df_cv[df_cv["ID"] == id_del].index
-                    df_final_del = df_cv.drop(idx_real)
-                    conn.update(worksheet="CompradoraV", data=df_final_del)
+                st.markdown(f'<div class="warning-box">¿Seguro deseas eliminar?<br>{nombre_p}</div>', unsafe_allow_html=True)
+                if st.button("SÍ, ELIMINAR", type="primary", use_container_width=True, key="del_list_btn"):
+                    idx_to_drop = df_cv[df_cv["ID"] == id_del].index
+                    df_final = df_cv.drop(idx_to_drop)
+                    conn.update(worksheet="CompradoraV", data=df_final)
                     st.cache_data.clear()
                     st.rerun()
 
 # ---------------------------------------------------------
-# MODO CARRUSEL
+# MODO CARRUSEL (VER PEDIDOS) - CON FILTROS Y ESTADOS
 # ---------------------------------------------------------
 else:
-    df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
+    # Filtros de visualización
+    filtro = st.radio("Mostrar solo:", ["Pendientes de Pago", "Pendientes de Entrega", "Todos los no Liquidados"], horizontal=True)
+    
+    if filtro == "Pendientes de Pago":
+        df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
+    elif filtro == "Pendientes de Entrega":
+        df_p = df_cv[(df_cv["Entregado"] == "NO") & (df_cv["Liquidado"] == "NO")].copy()
+    else:
+        df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
+
     if df_p.empty:
-        st.success("¡Todo liquidado! 🟢")
+        st.success("No hay pedidos con este filtro 🟢")
     else:
         if st.session_state.idx_carousel >= len(df_p): st.session_state.idx_carousel = 0
         item = df_p.iloc[st.session_state.idx_carousel]
@@ -198,6 +209,12 @@ else:
 
         with st.container(border=True):
             st.image(item["Foto_URL"], use_container_width=True)
+            
+            # --- INDICADORES DE ESTADO (BADGES) ---
+            e_html = f"<span class='badge badge-ok'>✅ ENTREGADO</span>" if item['Entregado'] == "SÍ" else f"<span class='badge badge-pnd'>📦 PEND. ENTREGA</span>"
+            l_html = f"<span class='badge badge-ok'>💰 LIQUIDADO</span>" if item['Liquidado'] == "SÍ" else f"<span class='badge badge-pnd'>⏳ PEND. PAGO</span>"
+            st.markdown(f"{e_html} {l_html}", unsafe_allow_html=True)
+            
             st.markdown(f"### {item['Producto']} (ID: {int(item['ID'])})")
             st.write(f"👤 Cliente: **{item['Cliente']}**")
             
@@ -210,26 +227,31 @@ else:
             
             c1, c2, c3 = st.columns(3)
             with c1:
-                with st.popover("📦 Entreg.", use_container_width=True):
-                    if st.button("CONFIRMAR", key=f"e_{real_idx}"):
-                        actualizar_estado(df_cv, real_idx, "Entregado", "SÍ")
-                        st.rerun()
+                # Botón de entrega dinámico
+                if item["Entregado"] == "NO":
+                    with st.popover("📦 Entreg.", use_container_width=True):
+                        if st.button("CONFIRMAR ENTREGA", key=f"e_{real_idx}"):
+                            actualizar_estado(df_cv, real_idx, "Entregado", "SÍ")
+                            st.rerun()
+                else:
+                    st.button("📦 OK", disabled=True, use_container_width=True)
+                    
             with c2:
-                with st.popover("💰 Liquid.", use_container_width=True):
-                    if st.button("CONFIRMAR", key=f"l_{real_idx}"):
-                        actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
-                        st.rerun()
+                # Botón de liquidación dinámico
+                if item["Liquidado"] == "NO":
+                    with st.popover("💰 Liquid.", use_container_width=True):
+                        if st.button("CONFIRMAR PAGO", key=f"l_{real_idx}"):
+                            actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
+                            st.rerun()
+                else:
+                    st.button("💰 OK", disabled=True, use_container_width=True)
+
             with c3:
                 with st.popover("🗑️ Borrar", use_container_width=True):
-                    st.markdown(f"""
-                        <div class="warning-box">
-                        ¿Seguro deseas eliminar?<br>
-                        <strong>{item['Producto']}</strong>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    if st.button("SÍ, ELIMINAR", key=f"del_c_{real_idx}", use_container_width=True, type="primary"):
-                        df_cv_del = df_cv.drop(real_idx)
-                        conn.update(worksheet="CompradoraV", data=df_cv_del)
+                    st.markdown(f'<div class="warning-box">¿Eliminar?<br>{item["Producto"]}</div>', unsafe_allow_html=True)
+                    if st.button("SÍ, BORRAR", key=f"del_c_{real_idx}", use_container_width=True, type="primary"):
+                        df_final_c = df_cv.drop(real_idx)
+                        conn.update(worksheet="CompradoraV", data=df_final_c)
                         st.cache_data.clear()
                         st.rerun()
 
