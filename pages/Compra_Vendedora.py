@@ -24,6 +24,7 @@ st.markdown("""
     .stButton button {
         border-radius: 12px;
     }
+    .confirm-text { color: #ff4b4b; font-weight: bold; font-size: 1.1em; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -64,7 +65,6 @@ def lectura_compradora():
         return df
     except: return pd.DataFrame()
 
-# --- LÓGICA DE DATOS ---
 def actualizar_estado(df, idx, campo, valor):
     df.at[idx, campo] = valor
     if campo == "Liquidado" and valor == "SÍ":
@@ -96,10 +96,9 @@ with nav_c2:
 st.divider()
 
 # ---------------------------------------------------------
-# MODO GESTIÓN (REGISTRO + TABLA COMPLETA)
+# MODO GESTIÓN (REGISTRO + TABLA)
 # ---------------------------------------------------------
 if not st.session_state.view_mode:
-    # 1. FORMULARIO ABIERTO
     with st.expander("🚀 NUEVO REGISTRO", expanded=True):
         with st.form("form_fast", clear_on_submit=True):
             f_prod = st.text_input("Nombre del Producto")
@@ -117,7 +116,6 @@ if not st.session_state.view_mode:
                     with st.spinner("Subiendo..."):
                         url_foto = subir_a_nube(f_foto) if f_foto else "https://via.placeholder.com/150"
                         costo_mxn = round(((v_usd * 1.0825) * tc_actual) + (((v_usd * 1.0825) * 0.12) * 19), 2)
-                        
                         nuevo_reg = {
                             "ID": int(df_cv["ID"].max() + 1) if not df_cv.empty else 1,
                             "Fecha_Registro": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -132,10 +130,8 @@ if not st.session_state.view_mode:
                         st.success("¡Registrado!")
                         st.rerun()
 
-    # 2. TABLA INTERACTIVA (LA QUE ME PEDISTE NO ELIMINAR)
     st.subheader("📊 Control General")
     if not df_cv.empty:
-        # Editor para modificar abonos, clientes o estados manualmente
         edited_df = st.data_editor(
             df_cv.sort_index(ascending=False),
             column_config={
@@ -151,28 +147,30 @@ if not st.session_state.view_mode:
         )
 
         if st.button("💾 GUARDAR CAMBIOS EN TABLA", use_container_width=True):
-            # Recalcular saldos antes de guardar por si cambió el abono
             for i in edited_df.index:
-                if edited_df.at[i, "Liquidado"] == "SÍ":
-                    edited_df.at[i, "Saldo"] = 0.0
-                else:
-                    edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
-            
+                if edited_df.at[i, "Liquidado"] == "SÍ": edited_df.at[i, "Saldo"] = 0.0
+                else: edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
             conn.update(worksheet="CompradoraV", data=edited_df.sort_index())
             st.cache_data.clear()
-            st.success("¡Base de datos actualizada!")
+            st.success("¡Actualizado!")
             st.rerun()
 
-        # 3. ZONA DE BORRADO
-        with st.expander("🗑️ ZONA DE PELIGRO"):
-            id_del = st.selectbox("ID a eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
-            if st.button("ELIMINAR DEFINITIVAMENTE", use_container_width=True, type="secondary"):
-                idx_real = df_cv[df_cv["ID"] == id_del].index
-                df_cv = df_cv.drop(idx_real)
-                conn.update(worksheet="CompradoraV", data=df_cv)
-                st.cache_data.clear()
-                st.toast("Eliminado")
-                st.rerun()
+        # --- ZONA DE BORRADO ACTUALIZADA ---
+        with st.expander("🗑️ ZONA DE PELIGRO (Eliminar)"):
+            id_del = st.selectbox("Selecciona ID:", sorted(df_cv["ID"].unique(), reverse=True))
+            # Obtener nombre del producto para el ID seleccionado
+            nombre_prod = df_cv[df_cv["ID"] == id_del]["Producto"].values
+            
+            with st.popover("⚠️ ELIMINAR REGISTRO", use_container_width=True):
+                st.markdown(f"<span class='confirm-text'>¿Seguro deseas eliminar?</span>", unsafe_allow_html=True)
+                st.write(f"ID: **{int(id_del)}**")
+                st.write(f"Producto: **{nombre_prod}**")
+                if st.button("SÍ, ELIMINAR DEFINITIVAMENTE", type="primary", use_container_width=True):
+                    idx_real = df_cv[df_cv["ID"] == id_del].index
+                    df_cv = df_cv.drop(idx_real)
+                    conn.update(worksheet="CompradoraV", data=df_cv)
+                    st.cache_data.clear()
+                    st.rerun()
 
 # ---------------------------------------------------------
 # MODO CARRUSEL
@@ -200,18 +198,21 @@ else:
             
             c1, c2, c3 = st.columns(3)
             with c1:
-                with st.popover("📦 Entregar", use_container_width=True):
+                with st.popover("📦 Entreg.", use_container_width=True):
                     if st.button("CONFIRMAR", key=f"e_{real_idx}"):
                         actualizar_estado(df_cv, real_idx, "Entregado", "SÍ")
                         st.rerun()
             with c2:
-                with st.popover("💰 Liquidar", use_container_width=True):
+                with st.popover("💰 Liquid.", use_container_width=True):
                     if st.button("CONFIRMAR", key=f"l_{real_idx}"):
                         actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
                         st.rerun()
             with c3:
+                # BORRADO EN CARRUSEL CON NOMBRE
                 with st.popover("🗑️ Borrar", use_container_width=True):
-                    if st.button("ELIMINAR", key=f"del_{real_idx}"):
+                    st.markdown("<span class='confirm-text'>¿Eliminar pedido?</span>", unsafe_allow_html=True)
+                    st.write(f"**{item['Producto']}**")
+                    if st.button("SÍ, BORRAR", key=f"del_{real_idx}", use_container_width=True):
                         df_cv = df_cv.drop(real_idx)
                         conn.update(worksheet="CompradoraV", data=df_cv)
                         st.cache_data.clear()
