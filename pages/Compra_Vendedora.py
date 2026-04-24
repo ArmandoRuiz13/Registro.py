@@ -186,10 +186,10 @@ else:
     
     if filtro == "Pendientes de Pago":
         df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
-    elif filtro == "Pendientes de Entrega":
-        df_p = df_cv[df_cv["Entregado"] == "NO"].copy()
-    else:
-        df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
+    # elif filtro == "Pendientes de Entrega":
+    #     df_p = df_cv[df_cv["Entregado"] == "NO"].copy()
+    # else:
+    #     df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
 
     if df_p.empty:
         st.success("No hay pedidos pendientes 🟢")
