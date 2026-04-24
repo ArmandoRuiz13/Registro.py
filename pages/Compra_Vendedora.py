@@ -24,7 +24,6 @@ st.markdown("""
     .stButton button {
         border-radius: 12px;
     }
-    .delete-text { color: #ff4b4b; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -65,15 +64,7 @@ def lectura_compradora():
         return df
     except: return pd.DataFrame()
 
-# --- LÓGICA DE BORRADO ---
-def eliminar_registro(df, idx_real):
-    df_nuevo = df.drop(idx_real)
-    conn.update(worksheet="CompradoraV", data=df_nuevo)
-    st.cache_data.clear()
-    st.toast("🗑️ Registro eliminado")
-    time.sleep(1)
-    st.rerun()
-
+# --- LÓGICA DE DATOS ---
 def actualizar_estado(df, idx, campo, valor):
     df.at[idx, campo] = valor
     if campo == "Liquidado" and valor == "SÍ":
@@ -97,7 +88,7 @@ nav_c1, nav_c2 = st.columns(2)
 with nav_c1:
     if st.button("⬅️ Menú", use_container_width=True): st.switch_page("app.py")
 with nav_c2:
-    label = "📱 Ver Pedidos" if not st.session_state.view_mode else "📝 Registro"
+    label = "📱 Ver Pedidos" if not st.session_state.view_mode else "📝 Gestión"
     if st.button(label, use_container_width=True, type="primary"):
         st.session_state.view_mode = not st.session_state.view_mode
         st.rerun()
@@ -105,9 +96,10 @@ with nav_c2:
 st.divider()
 
 # ---------------------------------------------------------
-# MODO REGISTRO
+# MODO GESTIÓN (REGISTRO + TABLA COMPLETA)
 # ---------------------------------------------------------
 if not st.session_state.view_mode:
+    # 1. FORMULARIO ABIERTO
     with st.expander("🚀 NUEVO REGISTRO", expanded=True):
         with st.form("form_fast", clear_on_submit=True):
             f_prod = st.text_input("Nombre del Producto")
@@ -140,27 +132,57 @@ if not st.session_state.view_mode:
                         st.success("¡Registrado!")
                         st.rerun()
 
-    # ZONA DE BORRADO POR ID (VISIBLE SIEMPRE)
+    # 2. TABLA INTERACTIVA (LA QUE ME PEDISTE NO ELIMINAR)
+    st.subheader("📊 Control General")
     if not df_cv.empty:
-        with st.expander("🗑️ ZONA DE PELIGRO (Eliminar)"):
-            id_a_borrar = st.selectbox("Selecciona ID para eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
-            if st.button("ELIMINAR REGISTRO SELECCIONADO", use_container_width=True):
-                st.warning(f"¿Seguro que quieres eliminar el ID {id_a_borrar}?")
-                if st.button("SÍ, ELIMINAR AHORA", key="confirm_del_list"):
-                    idx_to_del = df_cv[df_cv["ID"] == id_a_borrar].index
-                    eliminar_registro(df_cv, idx_to_del)
+        # Editor para modificar abonos, clientes o estados manualmente
+        edited_df = st.data_editor(
+            df_cv.sort_index(ascending=False),
+            column_config={
+                "ID": st.column_config.NumberColumn("ID", disabled=True),
+                "Foto_URL": st.column_config.ImageColumn("🖼️"),
+                "Abono": st.column_config.NumberColumn("Abono", format="$%.2f"),
+                "Saldo": st.column_config.NumberColumn("Saldo", format="$%.2f", disabled=True),
+                "Liquidado": st.column_config.SelectboxColumn("Liq.", options=["SÍ", "NO"]),
+                "Entregado": st.column_config.SelectboxColumn("Entr.", options=["SÍ", "NO"]),
+                "Costo_USD": None, "Fecha_Liquidacion": None, "Fecha_Registro": None
+            },
+            use_container_width=True, hide_index=True
+        )
+
+        if st.button("💾 GUARDAR CAMBIOS EN TABLA", use_container_width=True):
+            # Recalcular saldos antes de guardar por si cambió el abono
+            for i in edited_df.index:
+                if edited_df.at[i, "Liquidado"] == "SÍ":
+                    edited_df.at[i, "Saldo"] = 0.0
+                else:
+                    edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
+            
+            conn.update(worksheet="CompradoraV", data=edited_df.sort_index())
+            st.cache_data.clear()
+            st.success("¡Base de datos actualizada!")
+            st.rerun()
+
+        # 3. ZONA DE BORRADO
+        with st.expander("🗑️ ZONA DE PELIGRO"):
+            id_del = st.selectbox("ID a eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
+            if st.button("ELIMINAR DEFINITIVAMENTE", use_container_width=True, type="secondary"):
+                idx_real = df_cv[df_cv["ID"] == id_del].index
+                df_cv = df_cv.drop(idx_real)
+                conn.update(worksheet="CompradoraV", data=df_cv)
+                st.cache_data.clear()
+                st.toast("Eliminado")
+                st.rerun()
 
 # ---------------------------------------------------------
-# MODO CARRUSEL (UI/UX IPHONE 16 PRO)
+# MODO CARRUSEL
 # ---------------------------------------------------------
 else:
     df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
-    
     if df_p.empty:
         st.success("¡Todo liquidado! 🟢")
     else:
         if st.session_state.idx_carousel >= len(df_p): st.session_state.idx_carousel = 0
-        
         item = df_p.iloc[st.session_state.idx_carousel]
         real_idx = df_p.index[st.session_state.idx_carousel]
 
@@ -176,7 +198,6 @@ else:
             
             st.divider()
             
-            # ACCIONES
             c1, c2, c3 = st.columns(3)
             with c1:
                 with st.popover("📦 Entregar", use_container_width=True):
@@ -189,13 +210,13 @@ else:
                         actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
                         st.rerun()
             with c3:
-                # BOTÓN ELIMINAR EN CARRUSEL
                 with st.popover("🗑️ Borrar", use_container_width=True):
-                    st.error("¿Seguro?")
                     if st.button("ELIMINAR", key=f"del_{real_idx}"):
-                        eliminar_registro(df_cv, real_idx)
+                        df_cv = df_cv.drop(real_idx)
+                        conn.update(worksheet="CompradoraV", data=df_cv)
+                        st.cache_data.clear()
+                        st.rerun()
 
-        # NAVEGACIÓN
         st.write("")
         nav_b1, nav_b2 = st.columns(2)
         if nav_b1.button("⬅️ Anterior", use_container_width=True) and st.session_state.idx_carousel > 0:
