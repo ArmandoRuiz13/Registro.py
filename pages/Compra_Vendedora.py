@@ -18,13 +18,23 @@ st.markdown("""
     <style>
     [data-testid="stImage"] img {
         max-height: 300px;
-        object-fit: cover;
-        border-radius: 15px;
+        object-fit: contain; /* Ajusta la imagen sin recortarla */
+        border-radius: 10px;
+        background-color: #f0f0f0; /* Fondo gris claro para rellenar espacios si la foto es chica */
     }
     .stButton button {
         border-radius: 12px;
     }
-    .confirm-text { color: #ff4b4b; font-weight: bold; font-size: 1.1em; }
+    .warning-box {
+        color: #d32f2f;
+        font-weight: bold;
+        border: 1px solid #ffcdd2;
+        padding: 10px;
+        border-radius: 8px;
+        background-color: #ffebee;
+        text-align: center;
+        margin-bottom: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -106,8 +116,8 @@ if not st.session_state.view_mode:
             f_foto = st.file_uploader("📷 Foto", type=["jpg", "png", "jpeg"])
             
             col_u, col_a = st.columns(2)
-            f_usd_txt = col_u.text_input("Costo USD (Escribir)", placeholder="0.00")
-            f_abono_txt = col_a.text_input("Abono MXN (Escribir)", placeholder="0.00")
+            f_usd_txt = col_u.text_input("Costo USD", placeholder="0.00")
+            f_abono_txt = col_a.text_input("Abono MXN", placeholder="0.00")
             
             if st.form_submit_button("✅ GUARDAR REGISTRO", use_container_width=True):
                 v_usd = limpiar_num(f_usd_txt)
@@ -155,20 +165,22 @@ if not st.session_state.view_mode:
             st.success("¡Actualizado!")
             st.rerun()
 
-        # --- ZONA DE BORRADO ACTUALIZADA ---
+        # --- ZONA DE BORRADO ---
         with st.expander("🗑️ ZONA DE PELIGRO (Eliminar)"):
-            id_del = st.selectbox("Selecciona ID:", sorted(df_cv["ID"].unique(), reverse=True))
-            # Obtener nombre del producto para el ID seleccionado
-            nombre_prod = df_cv[df_cv["ID"] == id_del]["Producto"].values
+            id_del = st.selectbox("ID a eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
+            nombre_p = df_cv[df_cv["ID"] == id_del]["Producto"].values
             
-            with st.popover("⚠️ ELIMINAR REGISTRO", use_container_width=True):
-                st.markdown(f"<span class='confirm-text'>¿Seguro deseas eliminar?</span>", unsafe_allow_html=True)
-                st.write(f"ID: **{int(id_del)}**")
-                st.write(f"Producto: **{nombre_prod}**")
-                if st.button("SÍ, ELIMINAR DEFINITIVAMENTE", type="primary", use_container_width=True):
+            with st.popover(f"🗑️ ELIMINAR ID {int(id_del)}", use_container_width=True):
+                st.markdown(f"""
+                    <div class="warning-box">
+                    ¿Seguro deseas eliminar este registro?<br>
+                    <strong>{nombre_p}</strong>
+                    </div>
+                """, unsafe_allow_html=True)
+                if st.button("SÍ, ELIMINAR AHORA", type="primary", use_container_width=True, key="del_final_list"):
                     idx_real = df_cv[df_cv["ID"] == id_del].index
-                    df_cv = df_cv.drop(idx_real)
-                    conn.update(worksheet="CompradoraV", data=df_cv)
+                    df_final_del = df_cv.drop(idx_real)
+                    conn.update(worksheet="CompradoraV", data=df_final_del)
                     st.cache_data.clear()
                     st.rerun()
 
@@ -208,13 +220,16 @@ else:
                         actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
                         st.rerun()
             with c3:
-                # BORRADO EN CARRUSEL CON NOMBRE
                 with st.popover("🗑️ Borrar", use_container_width=True):
-                    st.markdown("<span class='confirm-text'>¿Eliminar pedido?</span>", unsafe_allow_html=True)
-                    st.write(f"**{item['Producto']}**")
-                    if st.button("SÍ, BORRAR", key=f"del_{real_idx}", use_container_width=True):
-                        df_cv = df_cv.drop(real_idx)
-                        conn.update(worksheet="CompradoraV", data=df_cv)
+                    st.markdown(f"""
+                        <div class="warning-box">
+                        ¿Seguro deseas eliminar?<br>
+                        <strong>{item['Producto']}</strong>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("SÍ, ELIMINAR", key=f"del_c_{real_idx}", use_container_width=True, type="primary"):
+                        df_cv_del = df_cv.drop(real_idx)
+                        conn.update(worksheet="CompradoraV", data=df_cv_del)
                         st.cache_data.clear()
                         st.rerun()
 
