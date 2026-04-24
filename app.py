@@ -41,6 +41,11 @@ def subir_a_nube(archivo_imagen):
 with st.sidebar:
     if st.button("📱 Modo Telefono", use_container_width=True):
         st.switch_page("pages/Cobranza_Movil.py")
+    
+    # Nuevo botón añadido:
+    if st.button("🛍️ Modo Compra Vendedora", use_container_width=True):
+        st.switch_page("pages/Compra_Vendedora.py")
+        
     st.divider()
 
 st.title("🚀 Control de Ventas (Cloudinary Edition)")
