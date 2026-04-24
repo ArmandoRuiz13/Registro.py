@@ -182,7 +182,7 @@ if not st.session_state.view_mode:
 # ---------------------------------------------------------
 else:
     # Opción por defecto: Pendientes de Pago
-    filtro = st.radio("Filtro:", ["Pendientes de Pago", "Pendientes de Entrega", "Todos los no Liquidados"], index=0, horizontal=True)
+    filtro = st.radio("Filtro:", ["Pendientes de Pago"], index=0, horizontal=True)
     
     if filtro == "Pendientes de Pago":
         df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
