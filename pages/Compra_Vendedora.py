@@ -79,6 +79,8 @@ def lectura_compradora():
         df = conn.read(worksheet="CompradoraV", ttl=0)
         if df is None or df.empty: return pd.DataFrame()
         df.columns = [str(c).strip() for c in df.columns]
+        # Limpieza de datos críticos
+        df["Foto_URL"] = df["Foto_URL"].fillna("")
         for col in ["Costo_MXN", "Abono", "Saldo", "ID"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         return df
@@ -122,7 +124,7 @@ if not st.session_state.view_mode:
         with st.form("form_fast", clear_on_submit=True):
             f_prod = st.text_input("Nombre del Producto")
             f_cli = st.text_input("Cliente")
-            f_foto = st.file_uploader("📷 Foto", type=["jpg", "png", "jpeg"])
+            f_foto = st.file_uploader("📷 Foto (Opcional)", type=["jpg", "png", "jpeg"])
             
             col_u, col_a = st.columns(2)
             f_usd_txt = col_u.text_input("Costo USD", placeholder="0.00")
@@ -133,7 +135,8 @@ if not st.session_state.view_mode:
                 v_abono = limpiar_num(f_abono_txt)
                 if f_prod and v_usd > 0:
                     with st.spinner("Subiendo..."):
-                        url_foto = subir_a_nube(f_foto) if f_foto else "https://via.placeholder.com/150"
+                        # Si no hay foto, ponemos una por defecto para que no truene
+                        url_foto = subir_a_nube(f_foto) if f_foto else ""
                         costo_mxn = round(((v_usd * 1.0825) * tc_actual) + (((v_usd * 1.0825) * 0.12) * 19), 2)
                         nuevo_reg = {
                             "ID": int(df_cv["ID"].max() + 1) if not df_cv.empty else 1,
@@ -187,10 +190,9 @@ if not st.session_state.view_mode:
                     st.rerun()
 
 # ---------------------------------------------------------
-# MODO CARRUSEL (VER PEDIDOS) - CON FILTROS Y ESTADOS
+# MODO CARRUSEL (VER PEDIDOS)
 # ---------------------------------------------------------
 else:
-    # Filtros de visualización
     filtro = st.radio("Mostrar solo:", ["Pendientes de Pago", "Pendientes de Entrega", "Todos los no Liquidados"], horizontal=True)
     
     if filtro == "Pendientes de Pago":
@@ -208,9 +210,13 @@ else:
         real_idx = df_p.index[st.session_state.idx_carousel]
 
         with st.container(border=True):
-            st.image(item["Foto_URL"], use_container_width=True)
+            # 🛡️ VALIDACIÓN DE IMAGEN: Si no hay URL, muestra un placeholder
+            img_url = item["Foto_URL"]
+            if not img_url or str(img_url).strip() == "":
+                img_url = "https://via.placeholder.com/400x300?text=Sin+Foto"
             
-            # --- INDICADORES DE ESTADO (BADGES) ---
+            st.image(img_url, use_container_width=True)
+            
             e_html = f"<span class='badge badge-ok'>✅ ENTREGADO</span>" if item['Entregado'] == "SÍ" else f"<span class='badge badge-pnd'>📦 PEND. ENTREGA</span>"
             l_html = f"<span class='badge badge-ok'>💰 LIQUIDADO</span>" if item['Liquidado'] == "SÍ" else f"<span class='badge badge-pnd'>⏳ PEND. PAGO</span>"
             st.markdown(f"{e_html} {l_html}", unsafe_allow_html=True)
@@ -227,7 +233,6 @@ else:
             
             c1, c2, c3 = st.columns(3)
             with c1:
-                # Botón de entrega dinámico
                 if item["Entregado"] == "NO":
                     with st.popover("📦 Entreg.", use_container_width=True):
                         if st.button("CONFIRMAR ENTREGA", key=f"e_{real_idx}"):
@@ -237,7 +242,6 @@ else:
                     st.button("📦 OK", disabled=True, use_container_width=True)
                     
             with c2:
-                # Botón de liquidación dinámico
                 if item["Liquidado"] == "NO":
                     with st.popover("💰 Liquid.", use_container_width=True):
                         if st.button("CONFIRMAR PAGO", key=f"l_{real_idx}"):
