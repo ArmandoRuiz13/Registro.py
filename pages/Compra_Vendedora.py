@@ -5,8 +5,8 @@ import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURACIÓN DE PÁGINA (Móvil First) ---
-st.set_page_config(page_title="Compra Vendedora", layout="centered")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Compra Vendedora - Seguimiento", layout="centered")
 
 # 🔑 CONFIGURACIÓN DE CLOUDINARY
 CLOUD_NAME = "doi81tooh"
@@ -52,51 +52,38 @@ def lectura_compradora():
 tc_actual = obtener_tc()
 df_cv = lectura_compradora()
 
-# --- INTERFAZ MÓVIL ---
 st.title("🛍️ Compra Vendedora")
 
-# Botón para volver rápido
 if st.button("⬅️ Volver al Menú", use_container_width=True):
     st.switch_page("app.py")
 
 st.divider()
 
-# --- FORMULARIO DE REGISTRO RÁPIDO ---
-with st.expander("➕ REGISTRAR NUEVA COMPRA", expanded=True):
-    with st.form("form_registro"):
-        f_producto = st.text_input("Producto", placeholder="Ej: Tenis Nike")
-        f_cliente = st.text_input("Cliente", placeholder="¿Quién lo encargó?")
+# --- FORMULARIO DE REGISTRO EXPRESS ---
+with st.expander("🚀 NUEVO REGISTRO RÁPIDO", expanded=True):
+    with st.form("form_registro_express", clear_on_submit=True):
+        f_producto = st.text_input("Producto")
+        f_cliente = st.text_input("Cliente (Opcional)")
+        f_foto = st.file_uploader("📷 Foto", type=["jpg", "png", "jpeg"])
         
-        f_foto = st.file_uploader("📷 Tomar/Subir Foto", type=["jpg", "png", "jpeg"])
-        
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             f_usd = st.number_input("Costo USD", min_value=0.0, step=0.1)
-        with col2:
-            f_abono = st.number_input("Abono (MXN)", min_value=0.0, step=50.0)
+        with c2:
+            f_abono = st.number_input("Abono inicial (MXN)", min_value=0.0, step=50.0)
             
-        st.write(f"💡 TC actual: **${tc_actual}**")
-        
-        # Cálculo de costos (siguiendo tu lógica previa)
-        f_usd_tax = f_usd * 1.0825
-        f_comi_mxn = (f_usd_tax * 0.12) * 19
-        costo_mxn = round((f_usd_tax * tc_actual) + f_comi_mxn, 2)
-        
-        st.info(f"Costo Total: **${costo_mxn:,.2f} MXN**")
-        
-        f_entregado = st.checkbox("¿Ya se entregó?")
-        f_liquidado = st.checkbox("¿Ya está liquidado?")
-
-        submit = st.form_submit_button("💾 GUARDAR REGISTRO", use_container_width=True)
+        submit = st.form_submit_button("✅ GUARDAR Y SEGUIR", use_container_width=True)
 
     if submit:
         if f_producto and f_usd > 0:
-            with st.spinner("Subiendo datos..."):
+            with st.spinner("Registrando..."):
                 url_foto = subir_a_nube(f_foto) if f_foto else "https://via.placeholder.com/150"
                 
-                # Lógica de liquidación
-                fecha_liq = datetime.now().strftime("%d/%m/%Y") if f_liquidado else "Pendiente"
-                saldo = costo_mxn - f_abono if not f_liquidado else 0.0
+                # Cálculos internos
+                f_usd_tax = f_usd * 1.0825
+                f_comi_mxn = (f_usd_tax * 0.12) * 19
+                costo_mxn = round((f_usd_tax * tc_actual) + f_comi_mxn, 2)
+                saldo_inicial = costo_mxn - f_abono
                 
                 nuevo_reg = {
                     "ID": len(df_cv) + 1,
@@ -107,69 +94,73 @@ with st.expander("➕ REGISTRAR NUEVA COMPRA", expanded=True):
                     "Costo_USD": f_usd,
                     "Costo_MXN": costo_mxn,
                     "Abono": f_abono,
-                    "Saldo": saldo,
-                    "Entregado": "SÍ" if f_entregado else "NO",
-                    "Liquidado": "SÍ" if f_liquidado else "NO",
-                    "Fecha_Liquidacion": fecha_liq
+                    "Saldo": saldo_inicial,
+                    "Entregado": "NO", # Por defecto NO al registrar
+                    "Liquidado": "NO",  # Por defecto NO al registrar
+                    "Fecha_Liquidacion": "Pendiente"
                 }
                 
                 df_final = pd.concat([df_cv, pd.DataFrame([nuevo_reg])], ignore_index=True)
                 conn.update(worksheet="CompradoraV", data=df_final)
                 st.cache_data.clear()
-                st.success("✅ Guardado correctamente")
+                st.success(f"¡Registrado! Costo: ${costo_mxn:,.2f}")
                 time.sleep(1)
                 st.rerun()
-        else:
-            st.warning("Escribe el nombre y el costo.")
 
-# --- LISTADO / GESTIÓN ---
-st.subheader("📋 Mis Pedidos")
+# --- SECCIÓN DE SEGUIMIENTO Y MODIFICACIÓN ---
+st.subheader("📋 Seguimiento de Pedidos")
 
 if not df_cv.empty:
-    # Filtro rápido para móvil
-    opcion_filtro = st.radio("Ver:", ["Todos", "Pendientes 🔴", "Liquidados 🟢"], horizontal=True)
+    # Filtros rápidos
+    vistas = ["Todos", "Pendientes 🔴", "Entregados 📦", "Liquidados 🟢"]
+    sel_vista = st.segmented_control("Filtrar por:", vistas, default="Todos")
     
-    df_mostrar = df_cv.copy().sort_index(ascending=False)
+    df_edit = df_cv.copy().sort_index(ascending=False)
     
-    if "Pendientes" in opcion_filtro:
-        df_mostrar = df_mostrar[df_mostrar["Liquidado"] == "NO"]
-    elif "Liquidados" in opcion_filtro:
-        df_mostrar = df_mostrar[df_mostrar["Liquidado"] == "SÍ"]
+    if sel_vista == "Pendientes 🔴":
+        df_edit = df_edit[df_edit["Liquidado"] == "NO"]
+    elif sel_vista == "Entregados 📦":
+        df_edit = df_edit[df_edit["Entregado"] == "SÍ"]
+    elif sel_vista == "Liquidados 🟢":
+        df_edit = df_edit[df_edit["Liquidado"] == "SÍ"]
 
-    # Editor de tabla simplificado para móvil
+    # Aquí es donde modificas el estado de entrega y liquidación
     edited_df = st.data_editor(
-        df_mostrar,
+        df_edit,
         column_config={
             "Foto_URL": st.column_config.ImageColumn("🖼️"),
-            "Costo_MXN": st.column_config.NumberColumn("Costo", format="$%.2f", disabled=True),
-            "Abono": st.column_config.NumberColumn("Abono", format="$%.2f"),
+            "Producto": st.column_config.TextColumn("Producto", disabled=True),
+            "Abono": st.column_config.NumberColumn("Abono (MXN)", format="$%.2f"),
+            "Entregado": st.column_config.SelectboxColumn("Entregado", options=["SÍ", "NO"]),
+            "Liquidado": st.column_config.SelectboxColumn("Liquidado", options=["SÍ", "NO"]),
             "Saldo": st.column_config.NumberColumn("Saldo", format="$%.2f", disabled=True),
-            "Entregado": st.column_config.SelectboxColumn("Entreg.", options=["SÍ", "NO"]),
-            "Liquidado": st.column_config.SelectboxColumn("Liq.", options=["SÍ", "NO"]),
-            "ID": None, "Fecha_Registro": None, "Costo_USD": None # Ocultar columnas poco importantes en móvil
+            "Fecha_Liquidacion": st.column_config.TextColumn("Fecha Liq.", disabled=True),
+            "ID": None, "Fecha_Registro": None, "Costo_USD": None, "Costo_MXN": None # Ocultos para vista limpia
         },
         use_container_width=True,
         hide_index=True
     )
 
-    if st.button("💾 ACTUALIZAR CAMBIOS", use_container_width=True, type="primary"):
-        # Al actualizar, recalculamos saldos y fechas de liquidación
-        for i in edited_df.index:
-            # Si se marca como liquidado y no tenía fecha, poner hoy
-            if edited_df.at[i, "Liquidado"] == "SÍ" and edited_df.at[i, "Fecha_Liquidacion"] == "Pendiente":
-                edited_df.at[i, "Fecha_Liquidacion"] = datetime.now().strftime("%d/%m/%Y")
-                edited_df.at[i, "Saldo"] = 0.0
-            elif edited_df.at[i, "Liquidado"] == "NO":
-                edited_df.at[i, "Fecha_Liquidacion"] = "Pendiente"
-                edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
+    if st.button("💾 GUARDAR CAMBIOS DE SEGUIMIENTO", use_container_width=True, type="primary"):
+        # Lógica para actualizar fechas y saldos automáticamente al editar
+        for idx in edited_df.index:
+            # Si se marca como liquidado ahora
+            if edited_df.at[idx, "Liquidado"] == "SÍ":
+                if edited_df.at[idx, "Fecha_Liquidacion"] == "Pendiente":
+                    edited_df.at[idx, "Fecha_Liquidacion"] = datetime.now().strftime("%d/%m/%Y")
+                edited_df.at[idx, "Saldo"] = 0.0
+            else:
+                edited_df.at[idx, "Fecha_Liquidacion"] = "Pendiente"
+                # Recalcular saldo por si cambió el abono
+                total_mxn = df_cv.loc[idx, "Costo_MXN"]
+                edited_df.at[idx, "Saldo"] = total_mxn - edited_df.at[idx, "Abono"]
 
-        # Mezclamos con el DF original para no perder las filas filtradas
+        # Sincronizar con la base principal
         df_cv.update(edited_df)
         conn.update(worksheet="CompradoraV", data=df_cv)
         st.cache_data.clear()
-        st.success("¡Datos actualizados!")
+        st.success("¡Seguimiento actualizado!")
         time.sleep(1)
         st.rerun()
-
 else:
-    st.info("No hay registros en CompradoraV aún.")
+    st.info("Aún no tienes registros para seguimiento.")
