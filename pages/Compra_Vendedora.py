@@ -34,15 +34,11 @@ st.markdown("""
     }
     .badge-pnd { background-color: #ffe0b2; color: #fb8c00; }
     .badge-ok { background-color: #c8e6c9; color: #2e7d32; }
-    .warning-box {
-        color: #d32f2f;
+    .counter-text {
+        font-size: 0.9em;
+        color: #666;
         font-weight: bold;
-        border: 1px solid #ffcdd2;
-        padding: 15px;
-        border-radius: 8px;
-        background-color: #ffebee;
-        text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -79,7 +75,6 @@ def lectura_compradora():
         df = conn.read(worksheet="CompradoraV", ttl=0)
         if df is None or df.empty: return pd.DataFrame()
         df.columns = [str(c).strip() for c in df.columns]
-        # Limpieza de datos críticos
         df["Foto_URL"] = df["Foto_URL"].fillna("")
         for col in ["Costo_MXN", "Abono", "Saldo", "ID"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -88,15 +83,18 @@ def lectura_compradora():
 
 def actualizar_estado(df, idx, campo, valor):
     df.at[idx, campo] = valor
+    # Validación solicitada: Si liquida, también entrega automáticamente
     if campo == "Liquidado" and valor == "SÍ":
+        df.at[idx, "Entregado"] = "SÍ"
         df.at[idx, "Fecha_Liquidacion"] = datetime.now().strftime("%d/%m/%Y")
         df.at[idx, "Saldo"] = 0.0
     elif campo == "Liquidado" and valor == "NO":
         df.at[idx, "Fecha_Liquidacion"] = "Pendiente"
         df.at[idx, "Saldo"] = df.at[idx, "Costo_MXN"] - df.at[idx, "Abono"]
+    
     conn.update(worksheet="CompradoraV", data=df)
     st.cache_data.clear()
-    st.toast(f"✅ {campo} actualizado")
+    st.toast(f"✅ Registro Actualizado")
     time.sleep(0.5)
 
 # --- INICIO ---
@@ -117,14 +115,14 @@ with nav_c2:
 st.divider()
 
 # ---------------------------------------------------------
-# MODO GESTIÓN
+# MODO GESTIÓN (REGISTRO + TABLA)
 # ---------------------------------------------------------
 if not st.session_state.view_mode:
     with st.expander("🚀 NUEVO REGISTRO", expanded=True):
         with st.form("form_fast", clear_on_submit=True):
             f_prod = st.text_input("Nombre del Producto")
             f_cli = st.text_input("Cliente")
-            f_foto = st.file_uploader("📷 Foto (Opcional)", type=["jpg", "png", "jpeg"])
+            f_foto = st.file_uploader("📷 Foto", type=["jpg", "png", "jpeg"])
             
             col_u, col_a = st.columns(2)
             f_usd_txt = col_u.text_input("Costo USD", placeholder="0.00")
@@ -135,7 +133,6 @@ if not st.session_state.view_mode:
                 v_abono = limpiar_num(f_abono_txt)
                 if f_prod and v_usd > 0:
                     with st.spinner("Subiendo..."):
-                        # Si no hay foto, ponemos una por defecto para que no truene
                         url_foto = subir_a_nube(f_foto) if f_foto else ""
                         costo_mxn = round(((v_usd * 1.0825) * tc_actual) + (((v_usd * 1.0825) * 0.12) * 19), 2)
                         nuevo_reg = {
@@ -170,47 +167,42 @@ if not st.session_state.view_mode:
 
         if st.button("💾 GUARDAR CAMBIOS EN TABLA", use_container_width=True):
             for i in edited_df.index:
-                if edited_df.at[i, "Liquidado"] == "SÍ": edited_df.at[i, "Saldo"] = 0.0
-                else: edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
+                if edited_df.at[i, "Liquidado"] == "SÍ": 
+                    edited_df.at[i, "Saldo"] = 0.0
+                    edited_df.at[i, "Entregado"] = "SÍ" # También aquí para consistencia
+                else: 
+                    edited_df.at[i, "Saldo"] = edited_df.at[i, "Costo_MXN"] - edited_df.at[i, "Abono"]
             conn.update(worksheet="CompradoraV", data=edited_df.sort_index())
             st.cache_data.clear()
             st.success("¡Actualizado!")
             st.rerun()
 
-        with st.expander("🗑️ ZONA DE PELIGRO"):
-            id_del = st.selectbox("ID a eliminar:", sorted(df_cv["ID"].unique(), reverse=True))
-            nombre_p = df_cv[df_cv["ID"] == id_del]["Producto"].iloc
-            with st.popover(f"🗑️ ELIMINAR ID {int(id_del)}", use_container_width=True):
-                st.markdown(f'<div class="warning-box">¿Seguro deseas eliminar?<br>{nombre_p}</div>', unsafe_allow_html=True)
-                if st.button("SÍ, ELIMINAR", type="primary", use_container_width=True, key="del_list_btn"):
-                    idx_to_drop = df_cv[df_cv["ID"] == id_del].index
-                    df_final = df_cv.drop(idx_to_drop)
-                    conn.update(worksheet="CompradoraV", data=df_final)
-                    st.cache_data.clear()
-                    st.rerun()
-
 # ---------------------------------------------------------
 # MODO CARRUSEL (VER PEDIDOS)
 # ---------------------------------------------------------
 else:
-    filtro = st.radio("Mostrar solo:", ["Pendientes de Pago", "Pendientes de Entrega", "Todos los no Liquidados"], horizontal=True)
+    # Opción por defecto: Pendientes de Pago
+    filtro = st.radio("Filtro:", ["Pendientes de Pago", "Pendientes de Entrega", "Todos los no Liquidados"], index=0, horizontal=True)
     
     if filtro == "Pendientes de Pago":
         df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
     elif filtro == "Pendientes de Entrega":
-        df_p = df_cv[(df_cv["Entregado"] == "NO") & (df_cv["Liquidado"] == "NO")].copy()
+        df_p = df_cv[df_cv["Entregado"] == "NO"].copy()
     else:
         df_p = df_cv[df_cv["Liquidado"] == "NO"].copy()
 
     if df_p.empty:
-        st.success("No hay pedidos con este filtro 🟢")
+        st.success("No hay pedidos pendientes 🟢")
     else:
         if st.session_state.idx_carousel >= len(df_p): st.session_state.idx_carousel = 0
+        
         item = df_p.iloc[st.session_state.idx_carousel]
         real_idx = df_p.index[st.session_state.idx_carousel]
 
+        # CONTADOR DE REGISTROS
+        st.markdown(f"<div class='counter-text'>Registro {st.session_state.idx_carousel + 1} de {len(df_p)}</div>", unsafe_allow_html=True)
+
         with st.container(border=True):
-            # 🛡️ VALIDACIÓN DE IMAGEN: Si no hay URL, muestra un placeholder
             img_url = item["Foto_URL"]
             if not img_url or str(img_url).strip() == "":
                 img_url = "https://via.placeholder.com/400x300?text=Sin+Foto"
@@ -244,6 +236,7 @@ else:
             with c2:
                 if item["Liquidado"] == "NO":
                     with st.popover("💰 Liquid.", use_container_width=True):
+                        # AUTOMÁTICAMENTE ENTREGA AL LIQUIDAR
                         if st.button("CONFIRMAR PAGO", key=f"l_{real_idx}"):
                             actualizar_estado(df_cv, real_idx, "Liquidado", "SÍ")
                             st.rerun()
@@ -252,7 +245,7 @@ else:
 
             with c3:
                 with st.popover("🗑️ Borrar", use_container_width=True):
-                    st.markdown(f'<div class="warning-box">¿Eliminar?<br>{item["Producto"]}</div>', unsafe_allow_html=True)
+                    st.error(f"¿Eliminar {item['Producto']}?")
                     if st.button("SÍ, BORRAR", key=f"del_c_{real_idx}", use_container_width=True, type="primary"):
                         df_final_c = df_cv.drop(real_idx)
                         conn.update(worksheet="CompradoraV", data=df_final_c)
