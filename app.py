@@ -106,12 +106,11 @@ with st.sidebar:
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
     venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="Ej: 1500.00")
 
-    porcentaje_comision = st.number_input(
-        "COMISIÓN (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=12.0,
-        step=1.0
+    porcentaje_comision = st.radio(
+        "COMISIÓN",
+        options=[12, 15],
+        index=0,
+        horizontal=True
     )
 
     def limpiar_num(t):
