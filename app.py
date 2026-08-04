@@ -105,7 +105,15 @@ with st.sidebar:
     usd_bruto_txt = st.text_input("COSTO USD", placeholder="Ej: 50.00")
     tc_mercado_txt = st.text_input("TIPO DE CAMBIO", value=str(tc_actual))
     venta_mxn_txt = st.text_input("VENTA FINAL (MXN)", placeholder="Ej: 1500.00")
-    
+
+    porcentaje_comision = st.number_input(
+        "COMISIÓN (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=12.0,
+        step=1.0
+    )
+
     def limpiar_num(t):
         if not t: return 0.0
         try: return float(str(t).replace(',', '').replace('$', ''))
@@ -116,13 +124,17 @@ with st.sidebar:
     venta_mxn = limpiar_num(venta_mxn_txt)
 
     usd_tax = usd_bruto * 1.0825
-    comi_mxn = (usd_tax * 0.12) * 19
+    comi_mxn = (usd_tax * (porcentaje_comision / 100)) * 19
     costo_tot_mxn = (usd_tax * tc_mercado) + comi_mxn
     ganancia_mxn = venta_mxn - costo_tot_mxn
     usd_final_eq = costo_tot_mxn / tc_mercado if tc_mercado > 0 else 0
 
     if st.button("CALCULAR 🔍", use_container_width=True):
-        st.info(f"Comisión: ${comi_mxn:,.2f}\n\nInversión: ${costo_tot_mxn:,.2f}\n\nGanancia: ${ganancia_mxn:,.2f}")
+        st.info(
+            f"Comisión ({porcentaje_comision:.0f}%): ${comi_mxn:,.2f}\n\n"
+            f"Inversión: ${costo_tot_mxn:,.2f}\n\n"
+            f"Ganancia: ${ganancia_mxn:,.2f}"
+        )
 
     btn_guardar = st.button("GUARDAR EN NUBE ✅", use_container_width=True, type="primary")
 
