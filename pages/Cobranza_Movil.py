@@ -10,7 +10,6 @@ st.markdown("""
 /* Oculta la navegación automática de Streamlit en todas las páginas.
    El menú personalizado de la aplicación sigue visible. */
 section[data-testid="stSidebar"] { display:none !important; }
-section[data-testid="stSidebar"] + div { display:none !important; }
 
 .block-container{padding-top:.7rem!important;padding-bottom:1rem!important;max-width:900px!important;margin:0 auto!important}
 header,footer{visibility:hidden}
