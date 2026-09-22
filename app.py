@@ -41,6 +41,11 @@ UPLOAD_PRESET = st.secrets.get("CLOUDINARY_UPLOAD_PRESET", os.getenv("CLOUDINARY
 # =========================================================
 st.markdown("""
 <style>
+/* Oculta SOLO la navegación automática de Streamlit (app + pages).
+   No afecta el menú personalizado que se construye más abajo. */
+section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
+    display: none !important;
+}
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 .main-title { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800; margin-bottom: .2rem; }
 .subtle { color: #6b7280; margin-bottom: 1rem; }
