@@ -7,6 +7,10 @@ st.set_page_config(page_title="Cobranza Flash", layout="centered", initial_sideb
 
 st.markdown("""
 <style>
+/* Oculta la navegación automática de Streamlit en todas las páginas.
+   El menú personalizado de la aplicación sigue visible. */
+section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] { display:none !important; }
+
 .block-container{padding-top:.5rem!important;padding-bottom:0!important;max-width:400px!important}
 header,footer{visibility:hidden}
 .img-wrapper{position:relative;width:100%;height:200px;background:#000;border-radius:15px;overflow:hidden;margin-bottom:5px}

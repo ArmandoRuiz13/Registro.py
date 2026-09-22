@@ -8,6 +8,10 @@ from streamlit_gsheets import GSheetsConnection
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Inventario Pro v2 - Pagos Granulares", layout="wide")
 
+st.markdown("""<style>
+section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] { display:none !important; }
+</style>""", unsafe_allow_html=True)
+
 # 🔑 CONFIGURACIÓN DE CLOUDINARY
 CLOUD_NAME = "doi81tooh"
 API_KEY = "245491997239959"

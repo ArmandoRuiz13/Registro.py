@@ -8,6 +8,10 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Lolis · Registros Compradoras", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""
 <style>
+/* Oculta la navegación automática de Streamlit en todas las páginas.
+   El menú personalizado de la aplicación sigue visible. */
+section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] { display:none !important; }
+
 #MainMenu,footer,header{visibility:hidden}.block-container{padding-top:1rem!important;max-width:1200px}
 [data-testid="stButton"] button{border-radius:14px!important;min-height:44px!important;font-weight:700!important}
 @media(max-width:700px){.block-container{padding:.5rem .8rem!important}h1{font-size:1.6rem!important}}

@@ -53,7 +53,7 @@ section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
 .success-card { border-radius: 16px; padding: 18px; background: rgba(46,125,50,.08); border: 1px solid rgba(46,125,50,.25); }
 div.stButton > button { min-height: 48px; border-radius: 12px; font-weight: 700; }
 [data-testid="stFileUploaderDropzone"] { border-radius: 14px; }
-.calc-card { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0 16px; padding:14px; border:2px solid rgba(46,125,50,.35); border-radius:16px; background:rgba(46,125,50,.07); }
+.calc-card { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:12px 0 16px; padding:14px; border:2px solid rgba(46,125,50,.35); border-radius:16px; background:rgba(46,125,50,.07); }
 .calc-card div { text-align:center; }
 .calc-card span { display:block; font-size:.72rem; font-weight:800; opacity:.72; letter-spacing:.03em; }
 .calc-card strong { display:block; font-size:1.18rem; margin-top:3px; }
@@ -69,7 +69,7 @@ div.stButton > button { min-height: 48px; border-radius: 12px; font-weight: 700;
     .stNumberInput input, .stTextInput input { font-size: 16px !important; }
     div[data-testid="stFileUploaderDropzone"] { padding: 10px; }
     .calc-card { grid-template-columns:1fr; gap:8px; padding:12px; }
-    .calc-card div { display:flex; justify-content:space-between; align-items:center; text-align:left; gap:10px; }
+    .calc-card div { display:flex; justify-content:space-between; align-items:center; text-align:left; gap:10px; padding:3px 0; }
     .calc-card span { font-size:.7rem; }
     .calc-card strong { font-size:1.08rem; }
 }
@@ -259,7 +259,7 @@ def registro_venta_online():
 
     if usd_bruto > 0:
         st.markdown(
-            f'<div class="calc-card"><div><span>COSTO CALCULADO</span><strong>${costo_tot_mxn:,.2f} MXN</strong></div><div><span>GANANCIA</span><strong>${ganancia_mxn:,.2f}</strong></div><div><span>TIPO DE CAMBIO</span><strong>${tc_mercado:.2f}</strong></div></div>',
+            f'<div class="calc-card"><div><span>COSTO CALCULADO</span><strong>${costo_tot_mxn:,.2f} MXN</strong></div><div><span>COMISIÓN</span><strong>${comi_mxn:,.2f} MXN</strong></div><div><span>GANANCIA</span><strong>${ganancia_mxn:,.2f} MXN</strong></div><div><span>TIPO DE CAMBIO</span><strong>${tc_mercado:.2f}</strong></div></div>',
             unsafe_allow_html=True,
         )
 
