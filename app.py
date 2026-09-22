@@ -53,15 +53,25 @@ section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] {
 .success-card { border-radius: 16px; padding: 18px; background: rgba(46,125,50,.08); border: 1px solid rgba(46,125,50,.25); }
 div.stButton > button { min-height: 48px; border-radius: 12px; font-weight: 700; }
 [data-testid="stFileUploaderDropzone"] { border-radius: 14px; }
+.calc-card { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0 16px; padding:14px; border:2px solid rgba(46,125,50,.35); border-radius:16px; background:rgba(46,125,50,.07); }
+.calc-card div { text-align:center; }
+.calc-card span { display:block; font-size:.72rem; font-weight:800; opacity:.72; letter-spacing:.03em; }
+.calc-card strong { display:block; font-size:1.18rem; margin-top:3px; }
 @media (max-width: 768px) {
-    .block-container { padding: .7rem .7rem 1.2rem .7rem; max-width: 100%; }
-    section[data-testid="stSidebar"] { display: none; }
-    .main-title { font-size: 1.7rem; }
+    .block-container { padding: .65rem .65rem 1.2rem .65rem; max-width: 100%; }
+    section[data-testid="stSidebar"] { width: min(88vw, 360px) !important; }
+    .main-title { font-size: 1.55rem; line-height: 1.15; }
     div.stButton > button { min-height: 54px; font-size: 1rem; }
-    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .35rem; }
     div[data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
+    div[data-testid="stRadio"] { margin-bottom: .35rem; }
     div[data-testid="stRadio"] label { padding: 7px 0; }
     .stNumberInput input, .stTextInput input { font-size: 16px !important; }
+    div[data-testid="stFileUploaderDropzone"] { padding: 10px; }
+    .calc-card { grid-template-columns:1fr; gap:8px; padding:12px; }
+    .calc-card div { display:flex; justify-content:space-between; align-items:center; text-align:left; gap:10px; }
+    .calc-card span { font-size:.7rem; }
+    .calc-card strong { font-size:1.08rem; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -154,19 +164,22 @@ if "registro_ok" not in st.session_state:
     st.session_state.registro_ok = None
 
 # =========================================================
-# DATOS
+# DATOS (carga diferida para que los controles del formulario respondan rápido)
 # =========================================================
 tc_actual = obtener_tc()
-df_ventas = leer_hoja(SHEET_VENTAS, VENTAS_COLUMNS)
-df_compradoras = leer_hoja(SHEET_COMPRADORAS, COMPRADORA_COLUMNS)
 
-for col in ["USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "MONTO_RECIBIDO"]:
-    df_ventas[col] = pd.to_numeric(df_ventas[col], errors="coerce").fillna(0)
+def cargar_ventas():
+    df = leer_hoja(SHEET_VENTAS, VENTAS_COLUMNS)
+    for col in ["USD_BRUTO", "USD_CON_8.25", "USD_FINAL_EQ", "TC_MERCADO", "COMISION_PAGADA_MXN", "COSTO_TOTAL_MXN", "VENTA_MXN", "GANANCIA_MXN", "MONTO_RECIBIDO"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["COMI_CHECK"] = df["COMI_CHECK"].fillna(False).astype(bool)
+    return df
 
-df_ventas["COMI_CHECK"] = df_ventas["COMI_CHECK"].fillna(False).astype(bool)
-
-for col in ["ID", "Costo_USD", "Costo_MXN", "Abono", "Saldo", "Venta_Directa_MXN"]:
-    df_compradoras[col] = pd.to_numeric(df_compradoras[col], errors="coerce").fillna(0)
+def cargar_compradoras():
+    df = leer_hoja(SHEET_COMPRADORAS, COMPRADORA_COLUMNS)
+    for col in ["ID", "Costo_USD", "Costo_MXN", "Abono", "Saldo", "Venta_Directa_MXN"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    return df
 
 # =========================================================
 # SIDEBAR ESCRITORIO
@@ -212,6 +225,11 @@ def registro_venta_online():
 
     st.markdown("### 3. Datos mínimos")
     nombre = st.text_input("PRODUCTO", placeholder="Ej. Tenis New Balance 550", key="venta_producto")
+
+    foto = st.file_uploader("📷 FOTO (opcional)", type=["jpg", "jpeg", "png"], key="venta_foto")
+    if foto:
+        st.image(foto, caption="Vista previa", width=180)
+
     cliente = st.text_input("CLIENTE (opcional)", placeholder="Nombre del cliente", key="venta_cliente")
 
     c1, c2 = st.columns(2)
@@ -226,15 +244,11 @@ def registro_venta_online():
 
     c3, c4 = st.columns(2)
     with c3:
-        usd_bruto = st.number_input("COSTO USD", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="venta_usd")
+        usd_bruto = st.number_input("COSTO USD", min_value=0.0, value=None, placeholder="0.00", step=0.01, format="%.2f", key="venta_usd") or 0.0
     with c4:
         tc_mercado = st.number_input("TIPO DE CAMBIO", min_value=0.0, value=float(tc_actual), step=0.01, format="%.2f", key="venta_tc")
 
-    venta_mxn = st.number_input("VENTA FINAL (MXN)", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="venta_final")
-
-    foto = st.file_uploader("📷 FOTO (opcional)", type=["jpg", "jpeg", "png"], key="venta_foto")
-    if foto:
-        st.image(foto, caption="Vista previa", width=220)
+    venta_mxn = st.number_input("VENTA FINAL (MXN)", min_value=0.0, value=None, placeholder="0.00", step=10.0, format="%.2f", key="venta_final") or 0.0
 
     # Mismos cálculos de la aplicación original.
     usd_tax = usd_bruto * 1.0825
@@ -244,7 +258,10 @@ def registro_venta_online():
     usd_final_eq = costo_tot_mxn / tc_mercado if tc_mercado > 0 else 0
 
     if usd_bruto > 0:
-        st.caption(f"Costo calculado: ${costo_tot_mxn:,.2f} MXN · Ganancia: ${ganancia_mxn:,.2f} · TC ${tc_mercado:.2f}")
+        st.markdown(
+            f'<div class="calc-card"><div><span>COSTO CALCULADO</span><strong>${costo_tot_mxn:,.2f} MXN</strong></div><div><span>GANANCIA</span><strong>${ganancia_mxn:,.2f}</strong></div><div><span>TIPO DE CAMBIO</span><strong>${tc_mercado:.2f}</strong></div></div>',
+            unsafe_allow_html=True,
+        )
 
     guardar = st.button("✅ GUARDAR VENTA", use_container_width=True, type="primary")
 
@@ -303,10 +320,10 @@ def registro_compradora_rapido():
 
     c1, c2 = st.columns(2)
     with c1:
-        usd = st.number_input("COSTO USD", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="cv_usd")
+        usd = st.number_input("COSTO USD", min_value=0.0, value=None, placeholder="0.00", step=0.01, format="%.2f", key="cv_usd") or 0.0
     with c2:
-        directo = st.number_input("VENTA DIRECTA MXN", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="cv_directo")
-    abono = st.number_input("ABONO MXN", min_value=0.0, value=0.0, step=10.0, format="%.2f", key="cv_abono")
+        directo = st.number_input("VENTA DIRECTA MXN", min_value=0.0, value=None, placeholder="0.00", step=10.0, format="%.2f", key="cv_directo") or 0.0
+    abono = st.number_input("ABONO MXN", min_value=0.0, value=None, placeholder="0.00", step=10.0, format="%.2f", key="cv_abono") or 0.0
 
     costo_final = directo if directo > 0 else round(((usd * 1.0825) * tc_actual) + (((usd * 1.0825) * 0.12) * 19), 2)
     if costo_final > 0:
@@ -350,6 +367,7 @@ def registro_compradora_rapido():
 # VENTAS / HISTORIAL
 # =========================================================
 def vista_ventas():
+    df_ventas = cargar_ventas()
     st.markdown('<div class="main-title">📋 Ver registros</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtle">Historial de Venta Online. Los datos históricos permanecen en Sheet1.</div>', unsafe_allow_html=True)
     if df_ventas.empty:
@@ -411,6 +429,7 @@ def vista_ventas():
 # COMPRADORAS / GESTIÓN
 # =========================================================
 def vista_compradoras():
+    df_compradoras = cargar_compradoras()
     st.markdown('<div class="main-title">📦 Compras vendedoras</div>', unsafe_allow_html=True)
     st.caption("Fuente de datos independiente: CompradoraV")
     if df_compradoras.empty:
