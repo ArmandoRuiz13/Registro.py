@@ -18,7 +18,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def nav():
     cols=st.columns(4)
-    for c,label,page in zip(cols,["➕ Registrar","📋 Online","👩‍💼 Compradoras","💰 Cobranza"],["app.py","pages/Registros_Online.py","pages/Registros_Compradoras.py","pages/Cobranza.py"]):
+    for c,label,page in zip(cols,["➕ Registrar","📋 Online","👩‍💼 Compradoras","💰 Cobranza"],["app.py","pages/Registros_Online.py","pages/Registros_Compradoras.py","pages/Cobranza_Movil.py"]):
         with c:
             if st.button(label,use_container_width=True,key="n_"+label): st.switch_page(page)
 nav()

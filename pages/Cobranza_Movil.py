@@ -3,15 +3,16 @@ import pandas as pd
 import time
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Cobranza Flash", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Cobranza Flash", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
 /* Oculta la navegación automática de Streamlit en todas las páginas.
    El menú personalizado de la aplicación sigue visible. */
-section[data-testid="stSidebar"] div[data-testid="stSidebarNav"] { display:none !important; }
+section[data-testid="stSidebar"] { display:none !important; }
+section[data-testid="stSidebar"] + div { display:none !important; }
 
-.block-container{padding-top:.5rem!important;padding-bottom:0!important;max-width:400px!important}
+.block-container{padding-top:.7rem!important;padding-bottom:1rem!important;max-width:900px!important;margin:0 auto!important}
 header,footer{visibility:hidden}
 .img-wrapper{position:relative;width:100%;height:200px;background:#000;border-radius:15px;overflow:hidden;margin-bottom:5px}
 .img-wrapper img{width:100%;height:100%;object-fit:contain}
@@ -21,21 +22,14 @@ header,footer{visibility:hidden}
 .nav-col button{background:#262730!important;border:1px solid #444!important;color:#00FFAA!important;font-size:20px!important}
 .prod-title{font-size:1rem;font-weight:bold;text-align:center;margin:0;line-height:1.1}.client-text{color:#888;font-size:.9rem;text-align:center;margin:0;display:flex;justify-content:center;align-items:center;gap:5px}.price-text{color:#00FFAA;font-size:1.5rem;font-weight:bold;text-align:center;margin:0}.abono-text{color:#FFCC00;font-size:.8rem;text-align:center;background:rgba(255,204,0,.1);border-radius:5px;margin:2px 0;padding:2px}.preload-img{display:none}
 [data-testid="stSidebar"]{min-width:280px;max-width:340px}[data-testid="stSidebarContent"]{padding:.8rem .7rem}[data-testid="stSidebar"] button{min-height:44px;border-radius:12px!important;font-weight:700!important}
-@media(max-width:700px){[data-testid="stSidebar"]{min-width:86vw;max-width:88vw}}
+@media(max-width:700px){.block-container{padding:.5rem .7rem 1rem!important;max-width:100%!important}}
 </style>
 """,unsafe_allow_html=True)
 
 conn=st.connection("gsheets",type=GSheetsConnection)
 
-def nav():
-    with st.sidebar:
-        st.markdown("# 🛍️ Lolis")
-        st.caption("Menú")
-        if st.button("📝 Registro",use_container_width=True):st.switch_page("app.py")
-        if st.button("📋 Registros Online",use_container_width=True):st.switch_page("pages/Registros_Online.py")
-        if st.button("👩‍💼 Registros Compradoras",use_container_width=True):st.switch_page("pages/Registros_Compradoras.py")
-        if st.button("💰 Cobranza",use_container_width=True):st.switch_page("pages/Cobranza_Movil.py")
-nav()
+# En Cobranza no mostramos el sidebar: esta sección usa toda la pantalla.
+
 
 def leer_online():
     try:
