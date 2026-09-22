@@ -29,6 +29,9 @@ if df.empty:
     st.stop()
 for col,default in [("TIPO_ARTICULO","Otro"),("CLIENTE","N/A"),("FOTO_URL","")]:
     if col not in df.columns: df[col]=default
+
+# Normaliza las fotos para evitar que valores vacíos/NaN rompan ImageColumn.
+df["FOTO_URL"] = df["FOTO_URL"].fillna("").astype(str).replace({"nan": "", "None": ""})
 for c in ["VENTA_MXN","MONTO_RECIBIDO","GANANCIA_MXN","COSTO_TOTAL_MXN"]:
     if c in df.columns: df[c]=pd.to_numeric(df[c],errors="coerce").fillna(0)
 
@@ -44,11 +47,40 @@ if estado!="Todos" and "ESTADO_PAGO" in view.columns: view=view[view["ESTADO_PAG
 
 st.write(f"**{len(view)} registros**")
 cols=[c for c in ["FECHA_REGISTRO","PRODUCTO","TIPO_ARTICULO","CLIENTE","TIENDA","COSTO_TOTAL_MXN","VENTA_MXN","GANANCIA_MXN","ESTADO_PAGO","MONTO_RECIBIDO","COMI_CHECK","FOTO_URL"] if c in view.columns]
-edit=st.data_editor(view.sort_index(ascending=False)[cols],hide_index=True,use_container_width=True,column_config={"FOTO_URL":st.column_config.ImageColumn("📷 FOTO"),"COSTO_TOTAL_MXN":st.column_config.NumberColumn("COSTO",format="$%.2f"),"VENTA_MXN":st.column_config.NumberColumn("VENTA",format="$%.2f"),"GANANCIA_MXN":st.column_config.NumberColumn("GANANCIA",format="$%.2f"),"MONTO_RECIBIDO":st.column_config.NumberColumn("RECIBIDO",format="$%.2f"),"ESTADO_PAGO":st.column_config.SelectboxColumn("ESTADO",options=["🔴 Debe","🟡 Abonado","🟢 Pagado"]),"COMI_CHECK":st.column_config.CheckboxColumn("COMI. PAGADA")})
+# Configuración de columnas construida de forma segura: algunas versiones de
+# Streamlit no exponen ImageColumn. En ese caso la foto se muestra como URL.
+column_config = {}
+if "FOTO_URL" in cols:
+    image_column = getattr(st.column_config, "ImageColumn", None)
+    if image_column is not None:
+        column_config["FOTO_URL"] = image_column("📷 FOTO")
+    else:
+        column_config["FOTO_URL"] = st.column_config.LinkColumn("📷 FOTO", display_text="Abrir foto")
+if "COSTO_TOTAL_MXN" in cols:
+    column_config["COSTO_TOTAL_MXN"] = st.column_config.NumberColumn("COSTO", format="$%.2f")
+if "VENTA_MXN" in cols:
+    column_config["VENTA_MXN"] = st.column_config.NumberColumn("VENTA", format="$%.2f")
+if "GANANCIA_MXN" in cols:
+    column_config["GANANCIA_MXN"] = st.column_config.NumberColumn("GANANCIA", format="$%.2f")
+if "MONTO_RECIBIDO" in cols:
+    column_config["MONTO_RECIBIDO"] = st.column_config.NumberColumn("RECIBIDO", format="$%.2f")
+if "ESTADO_PAGO" in cols:
+    column_config["ESTADO_PAGO"] = st.column_config.SelectboxColumn(
+        "ESTADO", options=["🔴 Debe", "🟡 Abonado", "🟢 Pagado"]
+    )
+if "COMI_CHECK" in cols:
+    column_config["COMI_CHECK"] = st.column_config.CheckboxColumn("COMI. PAGADA")
+
+edit = st.data_editor(
+    view.sort_index(ascending=False)[cols],
+    hide_index=True,
+    use_container_width=True,
+    column_config=column_config,
+)
 if st.button("💾 GUARDAR CAMBIOS",use_container_width=True,type="primary"):
     # Editamos sobre la base original usando FECHA_REGISTRO+PRODUCTO como referencia visual.
     for i in edit.index:
-        match=view.index[i] if i in view.index else None
+        match=i if i in view.index else None
         if match is not None:
             for col in ["CLIENTE","ESTADO_PAGO","MONTO_RECIBIDO","COMI_CHECK"]:
                 if col in edit.columns and col in df.columns: df.at[match,col]=edit.at[i,col]
